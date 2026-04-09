@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
-interface Record {
+type TypeMap = { [key: string]: { label: string; emoji: string } };
+type ColorMap = { [key: string]: string };
+type AuthorMap = { [key: string]: string };
+
+interface MemoryItem {
   id: number;
   type: string;
   content: string;
@@ -21,7 +25,7 @@ export default function RecordPage() {
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [polishing, setPolishing] = useState(false);
-  const [todayRecords, setTodayRecords] = useState<Record[]>([]);
+  const [todayRecords, setTodayRecords] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,7 +133,7 @@ export default function RecordPage() {
     }
   };
 
-  const typeLabels: Record<string, { label: string; emoji: string }> = {
+  const typeLabels: TypeMap = {
     todo: { label: '待办', emoji: '📝' },
     feeling: { label: '感受', emoji: '💭' },
     reflection: { label: '反思', emoji: '🌟' },
@@ -141,7 +145,7 @@ export default function RecordPage() {
   };
 
   const getTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
+    const colors: ColorMap = {
       todo: 'from-blue-50 to-blue-100 border-blue-400',
       feeling: 'from-pink-50 to-pink-100 border-pink-400',
       reflection: 'from-yellow-50 to-yellow-100 border-yellow-400',
@@ -150,13 +154,13 @@ export default function RecordPage() {
     return colors[type] || 'from-gray-50 to-gray-100 border-gray-400';
   };
 
-  const authorLabels: Record<string, string> = {
+  const authorLabels: AuthorMap = {
     him: '他',
     her: '她',
   };
 
   const getAuthorColor = (author: string) => {
-    const colors: Record<string, string> = {
+    const colors: ColorMap = {
       him: 'bg-blue-400',
       her: 'bg-rose-400',
     };

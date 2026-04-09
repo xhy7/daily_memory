@@ -3,7 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-interface MemoryRecord {
+type TypeMap = { [key: string]: { label: string; emoji: string } };
+type ColorMap = { [key: string]: string };
+type AuthorMap = { [key: string]: string };
+
+interface MemoryItem {
   id: number;
   type: string;
   content: string;
@@ -13,9 +17,9 @@ interface MemoryRecord {
   created_at: string;
 }
 
-interface DayRecord {
+interface DayItem {
   date: string;
-  records: MemoryRecord[];
+  records: MemoryItem[];
 }
 
 export default function HistoryPage() {
@@ -23,9 +27,9 @@ export default function HistoryPage() {
   const [deviceId, setDeviceId] = useState('');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [dayRecords, setDayRecords] = useState<MemoryRecord[]>([]);
+  const [dayRecords, setDayRecords] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [allRecords, setAllRecords] = useState<DayRecord[]>([]);
+  const [allRecords, setAllRecords] = useState<DayItem[]>([]);
 
   useEffect(() => {
     const storedDeviceId = localStorage.getItem('deviceId');
@@ -58,8 +62,8 @@ export default function HistoryPage() {
       const res = await fetch(`/api/records?deviceId=${deviceId}`);
       const data = await res.json();
 
-      const grouped: Record<string, MemoryRecord[]> = {};
-      (data.records || []).forEach((record: MemoryRecord) => {
+      const grouped: { [key: string]: MemoryItem[] } = {};
+      (data.records || []).forEach((record: MemoryItem) => {
         const date = record.created_at.split('T')[0];
         if (!grouped[date]) {
           grouped[date] = [];
@@ -131,7 +135,7 @@ export default function HistoryPage() {
   const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
   const days = getDaysInMonth(currentDate);
 
-  const typeLabels: Record<string, { label: string; emoji: string }> = {
+  const typeLabels: TypeMap = {
     todo: { label: '待办', emoji: '📝' },
     feeling: { label: '感受', emoji: '💭' },
     reflection: { label: '反思', emoji: '🌟' },
@@ -143,7 +147,7 @@ export default function HistoryPage() {
   };
 
   const getTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
+    const colors: ColorMap = {
       todo: 'from-blue-50 to-blue-100 border-blue-400',
       feeling: 'from-pink-50 to-pink-100 border-pink-400',
       reflection: 'from-yellow-50 to-yellow-100 border-yellow-400',
@@ -152,12 +156,12 @@ export default function HistoryPage() {
     return colors[type] || 'from-gray-50 to-gray-100 border-gray-400';
   };
 
-  const authorLabels: Record<string, string> = {
+  const authorLabels: AuthorMap = {
     him: '👦 他',
     her: '👧 她',
   };
 
-  const authorColors: Record<string, string> = {
+  const authorColors: AuthorMap = {
     him: 'bg-blue-400',
     her: 'bg-rose-400',
   };
