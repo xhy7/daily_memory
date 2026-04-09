@@ -71,7 +71,7 @@ export default function HistoryPage() {
         grouped[date].push(record);
       });
 
-      const groupedArray: DayRecord[] = Object.entries(grouped).map(([date, records]) => ({
+      const groupedArray: DayItem[] = Object.entries(grouped).map(([date, records]) => ({
         date,
         records,
       })).sort((a, b) => b.date.localeCompare(a.date));
