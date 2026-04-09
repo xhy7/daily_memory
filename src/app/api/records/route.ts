@@ -1,16 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, deleteMemoryRecord } from '@/lib/db';
+import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, deleteMemoryRecord, initializeDatabase } from '@/lib/db';
+
+// Initialize database on first request
+let dbInitialized = false;
+
+async function ensureDatabase() {
+  if (!dbInitialized) {
+    try {
+      await initializeDatabase();
+      dbInitialized = true;
+    } catch (error) {
+      console.error('Failed to initialize database:', error);
+      throw error;
+    }
+  }
+}
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const deviceId = searchParams.get('deviceId');
-  const date = searchParams.get('date');
-
-  if (!deviceId) {
-    return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
-  }
-
   try {
+    await ensureDatabase();
+
+    const searchParams = request.nextUrl.searchParams;
+    const deviceId = searchParams.get('deviceId');
+    const date = searchParams.get('date');
+
+    if (!deviceId) {
+      return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
+    }
+
     let records;
     if (date) {
       records = await getMemoryRecordsByDate(deviceId, date);
@@ -26,6 +43,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureDatabase();
+
     const body = await request.json();
     const { deviceId, type, content, imageUrl, author } = body;
 
@@ -43,6 +62,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    await ensureDatabase();
+
     const body = await request.json();
     const { id, polishedContent } = body;
 
@@ -59,14 +80,16 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return NextResponse.json({ error: 'id is required' }, { status: 400 });
-  }
-
   try {
+    await ensureDatabase();
+
+    const searchParams = request.nextUrl.searchParams;
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 });
+    }
+
     await deleteMemoryRecord(parseInt(id));
     return NextResponse.json({ success: true });
   } catch (error) {
