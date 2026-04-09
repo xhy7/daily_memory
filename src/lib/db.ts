@@ -16,6 +16,7 @@ export interface MemoryRecord {
 export async function initializeDatabase() {
   console.log('Initializing database...');
   try {
+    // Create table if not exists
     await sql`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
@@ -31,6 +32,15 @@ export async function initializeDatabase() {
       )
     `;
     console.log('Table created or already exists');
+
+    // Add tags column if it doesn't exist (for existing databases)
+    try {
+      await sql`ALTER TABLE records ADD COLUMN tags JSONB DEFAULT '[]'`;
+      console.log('Tags column added');
+    } catch (e) {
+      // Column already exists, ignore
+      console.log('Tags column already exists or error:', e);
+    }
   } catch (error) {
     console.error('Database initialization error:', error);
     throw error;
