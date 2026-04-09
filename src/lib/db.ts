@@ -42,45 +42,45 @@ export async function createMemoryRecord(
   imageUrl?: string,
   author?: string
 ): Promise<MemoryRecord> {
-  const result = await sql<MemoryRecord[]>`
+  const result = await sql`
     INSERT INTO records (device_id, type, content, image_url, author)
     VALUES (${deviceId}, ${type}, ${content}, ${imageUrl || null}, ${author || null})
     RETURNING id, device_id, type, content, polished_content, image_url, author, created_at, updated_at
   `;
-  return result.rows[0] as MemoryRecord;
+  return result.rows[0] as unknown as MemoryRecord;
 }
 
 export async function getMemoryRecordsByDevice(deviceId: string): Promise<MemoryRecord[]> {
-  const result = await sql<MemoryRecord[]>`
+  const result = await sql`
     SELECT id, device_id, type, content, polished_content, image_url, author, created_at, updated_at
     FROM records
     WHERE device_id = ${deviceId}
     ORDER BY created_at DESC
   `;
-  return result.rows as MemoryRecord[];
+  return result.rows as unknown as MemoryRecord[];
 }
 
 export async function getMemoryRecordsByDate(deviceId: string, date: string): Promise<MemoryRecord[]> {
-  const result = await sql<MemoryRecord[]>`
+  const result = await sql`
     SELECT id, device_id, type, content, polished_content, image_url, author, created_at, updated_at
     FROM records
     WHERE device_id = ${deviceId} AND DATE(created_at) = ${date}
     ORDER BY created_at DESC
   `;
-  return result.rows as MemoryRecord[];
+  return result.rows as unknown as MemoryRecord[];
 }
 
 export async function updateMemoryRecordPolishedContent(
   id: number,
   polishedContent: string
 ): Promise<MemoryRecord> {
-  const result = await sql<MemoryRecord[]>`
+  const result = await sql`
     UPDATE records
     SET polished_content = ${polishedContent}, updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id}
     RETURNING id, device_id, type, content, polished_content, image_url, author, created_at, updated_at
   `;
-  return result.rows[0] as MemoryRecord;
+  return result.rows[0] as unknown as MemoryRecord;
 }
 
 export async function deleteMemoryRecord(id: number): Promise<void> {
