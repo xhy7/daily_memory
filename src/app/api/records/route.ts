@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createRecord, getRecordsByDevice, getRecordsByDate, updateRecordPolishedContent, deleteRecord } from '@/lib/db';
+import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, deleteMemoryRecord } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -11,14 +11,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    console.log('Fetching records:', { deviceId, date });
     let records;
     if (date) {
-      records = await getRecordsByDate(deviceId, date);
+      records = await getMemoryRecordsByDate(deviceId, date);
     } else {
-      records = await getRecordsByDevice(deviceId);
+      records = await getMemoryRecordsByDevice(deviceId);
     }
-    console.log('Records found:', records.length);
     return NextResponse.json({ records });
   } catch (error) {
     console.error('Failed to fetch records:', error);
@@ -32,14 +30,10 @@ export async function POST(request: NextRequest) {
     const { deviceId, type, content, imageUrl, author } = body;
 
     if (!deviceId || !type || !content) {
-      return NextResponse.json({ error: 'Missing required fields', details: { deviceId, type, content } }, { status: 400 });
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    console.log('Creating record:', { deviceId, type, content, imageUrl, author });
-
-    const record = await createRecord(deviceId, type, content, imageUrl, author);
-    console.log('Record created:', record);
-
+    const record = await createMemoryRecord(deviceId, type, content, imageUrl, author);
     return NextResponse.json(record);
   } catch (error) {
     console.error('Failed to create record:', error);
@@ -56,7 +50,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const record = await updateRecordPolishedContent(id, polishedContent);
+    const record = await updateMemoryRecordPolishedContent(id, polishedContent);
     return NextResponse.json(record);
   } catch (error) {
     console.error('Failed to update record:', error);
@@ -73,7 +67,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    await deleteRecord(parseInt(id));
+    await deleteMemoryRecord(parseInt(id));
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Failed to delete record:', error);
