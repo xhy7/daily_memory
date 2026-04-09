@@ -13,6 +13,7 @@ interface MemoryItem {
   content: string;
   polished_content?: string;
   image_url?: string;
+  tags?: string[];
   author?: string;
   created_at: string;
 }
@@ -24,7 +25,7 @@ export default function RecordPage() {
   const [author, setAuthor] = useState<string>('her');
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string>('');
-  const [polishing, setPolishing] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [todayRecords, setTodayRecords] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -107,29 +108,76 @@ export default function RecordPage() {
     }
   };
 
-  const handlePolish = async (id: number, currentContent: string, type: string) => {
-    setPolishing(true);
+  const handleExtractTags = async (recordId: number, currentContent: string, currentImageUrl?: string) => {
+    setExtracting(true);
     try {
-      const res = await fetch('/api/ai-polish', {
+      const res = await fetch('/api/ai-tags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: currentContent, type }),
+        body: JSON.stringify({ content: currentContent, imageUrl: currentImageUrl }),
       });
       const data = await res.json();
 
+      if (data.tags && data.tags.length > 0) {
+        await fetch('/api/records', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: recordId, tags: data.tags }),
+        });
+
+        setTodayRecords(todayRecords.map(r =>
+          r.id === recordId ? { ...r, tags: data.tags } : r
+        ));
+      }
+    } catch (error) {
+      console.error('Failed to extract tags:', error);
+      alert('提取标签失败，请稍后重试');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleAddTag = async (recordId: number, newTag: string) => {
+    const record = todayRecords.find(r => r.id === recordId);
+    if (!record) return;
+
+    const currentTags = record.tags || [];
+    const updatedTags = [...currentTags, newTag];
+
+    try {
       await fetch('/api/records', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, polishedContent: data.polished }),
+        body: JSON.stringify({ id: recordId, tags: updatedTags }),
       });
 
       setTodayRecords(todayRecords.map(r =>
-        r.id === id ? { ...r, polished_content: data.polished } : r
+        r.id === recordId ? { ...r, tags: updatedTags } : r
       ));
     } catch (error) {
-      console.error('Failed to polish:', error);
-    } finally {
-      setPolishing(false);
+      console.error('Failed to add tag:', error);
+    }
+  };
+
+  const handleRemoveTag = async (recordId: number, tagToRemove: string) => {
+    const record = todayRecords.find(r => r.id === recordId);
+    if (!record) return;
+
+    const currentTags = record.tags || [];
+    const updatedTags = currentTags.filter(t => t !== tagToRemove);
+
+    try {
+      await fetch('/api/records', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: recordId, tags: updatedTags }),
+      });
+
+      setTodayRecords(todayRecords.map(r =>
+        r.id === recordId ? { ...r, tags: updatedTags } : r
+      ));
+    } catch (error) {
+      console.error('Failed to remove tag:', error);
     }
   };
 
@@ -160,7 +208,7 @@ export default function RecordPage() {
   };
 
   const getAuthorColor = (author: string) => {
-    const colors: ColorMap = {
+    const colors: AuthorMap = {
       him: 'bg-blue-400',
       her: 'bg-rose-400',
     };
@@ -274,11 +322,11 @@ export default function RecordPage() {
           </button>
           <button
             type="button"
-            onClick={() => handlePolish(-1, content, recordType)}
-            disabled={!content.trim() || polishing}
+            onClick={() => handleExtractTags(-1, content, imageUrl)}
+            disabled={(!content.trim() && !imageUrl) || extracting}
             className="flex-1 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white rounded-xl hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 shadow-md"
           >
-            {polishing ? '✨ 润色中...' : '✨ AI润色'}
+            {extracting ? '🏷️ 提取中...' : '🏷️ AI提取标签'}
           </button>
         </div>
       </form>
@@ -322,18 +370,32 @@ export default function RecordPage() {
 
               <p className="mb-2 text-gray-700">{record.content}</p>
 
-              {record.polished_content && (
-                <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-purple-700">
-                  <strong>✨ 润色后：</strong>{record.polished_content}
+              {/* Tags Display */}
+              {record.tags && record.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {record.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-600 rounded-full text-xs"
+                    >
+                      {tag}
+                      <button
+                        onClick={() => handleRemoveTag(record.id, tag)}
+                        className="ml-1 text-purple-400 hover:text-purple-600"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 </div>
               )}
 
               <button
-                onClick={() => handlePolish(record.id, record.content, record.type)}
-                disabled={polishing}
+                onClick={() => handleExtractTags(record.id, record.content, record.image_url)}
+                disabled={extracting}
                 className="mt-2 text-sm text-purple-500 hover:text-purple-700 disabled:opacity-50"
               >
-                ✨ AI润色
+                {record.tags && record.tags.length > 0 ? '🏷️ 重新提取标签' : '🏷️ AI提取标签'}
               </button>
             </div>
           ))

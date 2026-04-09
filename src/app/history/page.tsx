@@ -13,6 +13,7 @@ interface MemoryItem {
   content: string;
   polished_content?: string;
   image_url?: string;
+  tags?: string[];
   author?: string;
   created_at: string;
 }
@@ -282,6 +283,19 @@ export default function HistoryPage() {
                   {record.polished_content && (
                     <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-purple-700">
                       <strong>✨ 润色后：</strong>{record.polished_content}
+                    </div>
+                  )}
+
+                  {record.tags && record.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {record.tags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-600 rounded-full text-xs"
+                        >
+                          🏷️ {tag}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>

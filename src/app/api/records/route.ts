@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, deleteMemoryRecord, initializeDatabase } from '@/lib/db';
+import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, deleteMemoryRecord, initializeDatabase } from '@/lib/db';
 
 // Initialize database on first request
 let dbInitialized = false;
@@ -65,17 +65,25 @@ export async function PATCH(request: NextRequest) {
     await ensureDatabase();
 
     const body = await request.json();
-    const { id, polishedContent } = body;
+    const { id, polishedContent, tags } = body;
 
-    if (!id || !polishedContent) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 });
     }
 
-    const record = await updateMemoryRecordPolishedContent(id, polishedContent);
+    let record;
+    if (tags !== undefined) {
+      record = await updateMemoryRecordTags(id, tags);
+    } else if (polishedContent) {
+      record = await updateMemoryRecordPolishedContent(id, polishedContent);
+    } else {
+      return NextResponse.json({ error: 'polishedContent or tags is required' }, { status: 400 });
+    }
+
     return NextResponse.json(record);
   } catch (error) {
     console.error('Failed to update record:', error);
-    return NextResponse.json({ error: 'Failed to update record' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update record', details: String(error) }, { status: 500 });
   }
 }
 
