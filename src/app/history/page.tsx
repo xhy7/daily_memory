@@ -219,7 +219,7 @@ export default function HistoryPage() {
                     ? 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200'
                     : 'hover:bg-gray-50'
                   : ''
-              } ${selectedDate === formatDate(day) ? 'ring-2 ring-pink-400' : ''}`}
+              } ${day && selectedDate === formatDate(day) ? 'ring-2 ring-pink-400' : ''}`}
             >
               <span className={hasRecords(day) ? 'text-pink-500 font-medium' : 'text-gray-600'}>
                 {day || ''}
