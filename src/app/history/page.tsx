@@ -214,14 +214,12 @@ export default function HistoryPage() {
               onClick={() => day && fetchDayRecords(formatDate(day))}
               disabled={!day}
               className={`p-2 text-center rounded-xl transition relative ${
-                day
-                  ? hasRecords(day)
-                    ? 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200'
-                    : 'hover:bg-gray-50'
-                  : ''
+                day && hasRecords(day)
+                  ? 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200'
+                  : 'hover:bg-gray-50'
               } ${day && selectedDate === formatDate(day) ? 'ring-2 ring-pink-400' : ''}`}
             >
-              <span className={hasRecords(day) ? 'text-pink-500 font-medium' : 'text-gray-600'}>
+              <span className={day && hasRecords(day) ? 'text-pink-500 font-medium' : 'text-gray-600'}>
                 {day || ''}
               </span>
               {day && hasRecords(day) && (
