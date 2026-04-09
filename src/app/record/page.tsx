@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
-interface MemoryMemoryRecord {
+interface Record {
   id: number;
   type: string;
   content: string;
@@ -13,15 +13,15 @@ interface MemoryMemoryRecord {
   created_at: string;
 }
 
-export default function MemoryRecordPage() {
+export default function RecordPage() {
   const router = useRouter();
   const [deviceId, setDeviceId] = useState('');
-  const [recordType, setMemoryRecordType] = useState<MemoryRecordType>('sweet_interaction');
-  const [author, setAuthor] = useState<Author>('her');
+  const [recordType, setRecordType] = useState<string>('sweet_interaction');
+  const [author, setAuthor] = useState<string>('her');
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [polishing, setPolishing] = useState(false);
-  const [todayMemoryRecords, setTodayMemoryRecords] = useState<MemoryRecord[]>([]);
+  const [todayRecords, setTodayRecords] = useState<Record[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,8 +36,7 @@ export default function MemoryRecordPage() {
       setDeviceId(storedDeviceId);
     }
 
-    // Set default author based on last selection
-    const lastAuthor = localStorage.getItem('lastAuthor') as Author;
+    const lastAuthor = localStorage.getItem('lastAuthor');
     if (lastAuthor) {
       setAuthor(lastAuthor);
     }
@@ -45,16 +44,16 @@ export default function MemoryRecordPage() {
 
   useEffect(() => {
     if (deviceId) {
-      fetchTodayMemoryRecords();
+      fetchTodayRecords();
     }
   }, [deviceId]);
 
-  const fetchTodayMemoryRecords = async () => {
+  const fetchTodayRecords = async () => {
     const today = new Date().toISOString().split('T')[0];
     try {
       const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}`);
       const data = await res.json();
-      setTodayMemoryRecords(data.records || []);
+      setTodayRecords(data.records || []);
     } catch (error) {
       console.error('Failed to fetch records:', error);
     } finally {
@@ -79,7 +78,6 @@ export default function MemoryRecordPage() {
     e.preventDefault();
     if (!content.trim()) return;
 
-    // Save author preference
     localStorage.setItem('lastAuthor', author);
 
     try {
@@ -91,23 +89,21 @@ export default function MemoryRecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        console.error('Error creating record:', errorData);
         alert('保存失败: ' + (errorData.error || '未知错误'));
         return;
       }
 
-      const newMemoryRecord = await res.json();
-      console.log('MemoryRecord created successfully:', newMemoryRecord);
+      const newRecord = await res.json();
       setContent('');
       setImageUrl('');
-      setTodayMemoryRecords([newMemoryRecord, ...todayMemoryRecords]);
+      setTodayRecords([newRecord, ...todayRecords]);
     } catch (error) {
       console.error('Failed to create record:', error);
       alert('保存失败，请稍后重试');
     }
   };
 
-  const handlePolish = async (id: number, currentContent: string, type: MemoryRecordType) => {
+  const handlePolish = async (id: number, currentContent: string, type: string) => {
     setPolishing(true);
     try {
       const res = await fetch('/api/ai-polish', {
@@ -123,7 +119,7 @@ export default function MemoryRecordPage() {
         body: JSON.stringify({ id, polishedContent: data.polished }),
       });
 
-      setTodayMemoryRecords(todayMemoryRecords.map(r =>
+      setTodayRecords(todayRecords.map(r =>
         r.id === id ? { ...r, polished_content: data.polished } : r
       ));
     } catch (error) {
@@ -133,7 +129,7 @@ export default function MemoryRecordPage() {
     }
   };
 
-  const typeLabels: MemoryRecord<string, { label: string; emoji: string }> = {
+  const typeLabels: Record<string, { label: string; emoji: string }> = {
     todo: { label: '待办', emoji: '📝' },
     feeling: { label: '感受', emoji: '💭' },
     reflection: { label: '反思', emoji: '🌟' },
@@ -145,7 +141,7 @@ export default function MemoryRecordPage() {
   };
 
   const getTypeColor = (type: string) => {
-    const colors: MemoryRecord<string, string> = {
+    const colors: Record<string, string> = {
       todo: 'from-blue-50 to-blue-100 border-blue-400',
       feeling: 'from-pink-50 to-pink-100 border-pink-400',
       reflection: 'from-yellow-50 to-yellow-100 border-yellow-400',
@@ -154,26 +150,21 @@ export default function MemoryRecordPage() {
     return colors[type] || 'from-gray-50 to-gray-100 border-gray-400';
   };
 
-  const authorLabels: MemoryRecord<string, string> = {
+  const authorLabels: Record<string, string> = {
     him: '他',
     her: '她',
   };
 
-  const authorColors: MemoryRecord<string, string> = {
-    him: 'bg-blue-400',
-    her: 'bg-rose-400',
-  };
-
-  const getAuthorLabel = (author: string) => {
-    return authorLabels[author] || '她';
-  };
-
   const getAuthorColor = (author: string) => {
-    const colors: MemoryRecord<string, string> = {
+    const colors: Record<string, string> = {
       him: 'bg-blue-400',
       her: 'bg-rose-400',
     };
     return colors[author] || 'bg-rose-400';
+  };
+
+  const getAuthorLabel = (author: string) => {
+    return authorLabels[author] || '她';
   };
 
   return (
@@ -188,16 +179,13 @@ export default function MemoryRecordPage() {
       </header>
 
       <form onSubmit={handleSubmit} className="mb-8 space-y-4">
-        {/* Author selection */}
         <div className="flex gap-2">
           <span className="text-sm text-pink-400 self-center mr-2">记录人：</span>
           <button
             type="button"
             onClick={() => setAuthor('him')}
             className={`flex-1 py-2 px-4 rounded-full transition flex items-center justify-center gap-2 ${
-              author === 'him'
-                ? 'bg-blue-400 text-white'
-                : 'bg-blue-50 text-blue-400'
+              author === 'him' ? 'bg-blue-400 text-white' : 'bg-blue-50 text-blue-400'
             }`}
           >
             👦 {authorLabels.him}
@@ -206,22 +194,19 @@ export default function MemoryRecordPage() {
             type="button"
             onClick={() => setAuthor('her')}
             className={`flex-1 py-2 px-4 rounded-full transition flex items-center justify-center gap-2 ${
-              author === 'her'
-                ? 'bg-rose-400 text-white'
-                : 'bg-rose-50 text-rose-400'
+              author === 'her' ? 'bg-rose-400 text-white' : 'bg-rose-50 text-rose-400'
             }`}
           >
             👧 {authorLabels.her}
           </button>
         </div>
 
-        {/* MemoryRecord type selection */}
         <div className="flex gap-2">
           {(Object.keys(typeLabels) as string[]).map((type) => (
             <button
               key={type}
               type="button"
-              onClick={() => setMemoryRecordType(type as MemoryRecordType)}
+              onClick={() => setRecordType(type)}
               className={`flex-1 py-2 px-2 rounded-lg transition text-sm ${
                 recordType === type
                   ? 'bg-gradient-to-r from-pink-400 to-rose-400 text-white'
@@ -233,7 +218,6 @@ export default function MemoryRecordPage() {
           ))}
         </div>
 
-        {/* Image upload */}
         <div className="flex items-center gap-3">
           <input
             type="file"
@@ -299,13 +283,13 @@ export default function MemoryRecordPage() {
         <h2 className="text-xl font-semibold text-pink-500">今日甜蜜记录 💕</h2>
         {loading ? (
           <p className="text-gray-500">加载中...</p>
-        ) : todayMemoryRecords.length === 0 ? (
+        ) : todayRecords.length === 0 ? (
           <div className="text-center py-10 text-pink-300">
             <p className="text-4xl mb-2">💗</p>
             <p>今天还没有记录哦~</p>
           </div>
         ) : (
-          todayMemoryRecords.map((record) => (
+          todayRecords.map((record) => (
             <div
               key={record.id}
               className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${getTypeColor(record.type)} shadow-sm`}
@@ -327,7 +311,7 @@ export default function MemoryRecordPage() {
               {record.image_url && (
                 <img
                   src={record.image_url}
-                  alt="MemoryRecord image"
+                  alt="Record image"
                   className="w-full max-h-64 object-cover rounded-lg mb-3"
                 />
               )}
