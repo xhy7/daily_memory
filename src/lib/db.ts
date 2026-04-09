@@ -1,6 +1,6 @@
 import { sql } from '@vercel/postgres';
 
-export interface Record {
+export interface MemoryRecord {
   id: number;
   device_id: string;
   type: string;
@@ -35,13 +35,13 @@ export async function initializeDatabase() {
   }
 }
 
-export async function createRecord(
+export async function createMemoryRecord(
   deviceId: string,
   type: string,
   content: string,
   imageUrl?: string,
   author?: string
-): Promise<Record> {
+): Promise<MemoryRecord> {
   const result = await sql`
     INSERT INTO records (device_id, type, content, image_url, author)
     VALUES (${deviceId}, ${type}, ${content}, ${imageUrl || null}, ${author || null})
@@ -50,7 +50,7 @@ export async function createRecord(
   return result.rows[0];
 }
 
-export async function getRecordsByDevice(deviceId: string): Promise<Record[]> {
+export async function getMemoryRecordsByDevice(deviceId: string): Promise<MemoryRecord[]> {
   const result = await sql`
     SELECT id, device_id, type, content, polished_content, image_url, author, created_at, updated_at
     FROM records
@@ -60,7 +60,7 @@ export async function getRecordsByDevice(deviceId: string): Promise<Record[]> {
   return result.rows;
 }
 
-export async function getRecordsByDate(deviceId: string, date: string): Promise<Record[]> {
+export async function getMemoryRecordsByDate(deviceId: string, date: string): Promise<MemoryRecord[]> {
   const result = await sql`
     SELECT id, device_id, type, content, polished_content, image_url, author, created_at, updated_at
     FROM records
@@ -70,10 +70,10 @@ export async function getRecordsByDate(deviceId: string, date: string): Promise<
   return result.rows;
 }
 
-export async function updateRecordPolishedContent(
+export async function updateMemoryRecordPolishedContent(
   id: number,
   polishedContent: string
-): Promise<Record> {
+): Promise<MemoryRecord> {
   const result = await sql`
     UPDATE records
     SET polished_content = ${polishedContent}, updated_at = CURRENT_TIMESTAMP
@@ -83,6 +83,6 @@ export async function updateRecordPolishedContent(
   return result.rows[0];
 }
 
-export async function deleteRecord(id: number): Promise<void> {
+export async function deleteMemoryRecord(id: number): Promise<void> {
   await sql`DELETE FROM records WHERE id = ${id}`;
 }

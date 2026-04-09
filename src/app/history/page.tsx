@@ -3,10 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-type RecordType = 'todo' | 'feeling' | 'reflection' | 'sweet_interaction';
-type Author = 'him' | 'her';
-
-interface Record {
+interface MemoryMemoryRecord {
   id: number;
   type: string;
   content: string;
@@ -16,9 +13,9 @@ interface Record {
   created_at: string;
 }
 
-interface DayRecord {
+interface DayMemoryRecord {
   date: string;
-  records: Record[];
+  records: MemoryMemoryRecord[];
 }
 
 export default function HistoryPage() {
@@ -26,9 +23,9 @@ export default function HistoryPage() {
   const [deviceId, setDeviceId] = useState('');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [dayRecords, setDayRecords] = useState<Record[]>([]);
+  const [dayMemoryRecords, setDayMemoryRecords] = useState<MemoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [allRecords, setAllRecords] = useState<DayRecord[]>([]);
+  const [allMemoryRecords, setAllMemoryRecords] = useState<DayMemoryRecord[]>([]);
 
   useEffect(() => {
     const storedDeviceId = localStorage.getItem('deviceId');
@@ -43,26 +40,26 @@ export default function HistoryPage() {
 
   useEffect(() => {
     if (deviceId) {
-      fetchAllRecords();
+      fetchAllMemoryRecords();
     }
   }, [deviceId]);
 
   // Load today's records by default
   useEffect(() => {
-    if (deviceId && allRecords.length > 0 && !selectedDate) {
+    if (deviceId && allMemoryRecords.length > 0 && !selectedDate) {
       const today = new Date().toISOString().split('T')[0];
       setSelectedDate(today);
-      fetchDayRecords(today);
+      fetchDayMemoryRecords(today);
     }
-  }, [deviceId, allRecords]);
+  }, [deviceId, allMemoryRecords]);
 
-  const fetchAllRecords = async () => {
+  const fetchAllMemoryRecords = async () => {
     try {
       const res = await fetch(`/api/records?deviceId=${deviceId}`);
       const data = await res.json();
 
-      const grouped: Record<string, Record[]> = {};
-      (data.records || []).forEach((record: Record) => {
+      const grouped: MemoryRecord<string, MemoryRecord[]> = {};
+      (data.records || []).forEach((record: MemoryRecord) => {
         const date = record.created_at.split('T')[0];
         if (!grouped[date]) {
           grouped[date] = [];
@@ -70,12 +67,12 @@ export default function HistoryPage() {
         grouped[date].push(record);
       });
 
-      const groupedArray: DayRecord[] = Object.entries(grouped).map(([date, records]) => ({
+      const groupedArray: DayMemoryRecord[] = Object.entries(grouped).map(([date, records]) => ({
         date,
         records,
       })).sort((a, b) => b.date.localeCompare(a.date));
 
-      setAllRecords(groupedArray);
+      setAllMemoryRecords(groupedArray);
     } catch (error) {
       console.error('Failed to fetch records:', error);
     } finally {
@@ -83,11 +80,11 @@ export default function HistoryPage() {
     }
   };
 
-  const fetchDayRecords = async (date: string) => {
+  const fetchDayMemoryRecords = async (date: string) => {
     try {
       const res = await fetch(`/api/records?deviceId=${deviceId}&date=${date}`);
       const data = await res.json();
-      setDayRecords(data.records || []);
+      setDayMemoryRecords(data.records || []);
       setSelectedDate(date);
     } catch (error) {
       console.error('Failed to fetch day records:', error);
@@ -119,22 +116,22 @@ export default function HistoryPage() {
     return `${year}-${month}-${dayStr}`;
   };
 
-  const hasRecords = (day: number) => {
+  const hasMemoryRecords = (day: number) => {
     const dateStr = formatDate(day);
-    return allRecords.some(dr => dr.date === dateStr);
+    return allMemoryRecords.some(dr => dr.date === dateStr);
   };
 
-  const getRecordCount = (day: number) => {
+  const getMemoryRecordCount = (day: number) => {
     const dateStr = formatDate(day);
-    const dayRecord = allRecords.find(dr => dr.date === dateStr);
-    return dayRecord ? dayRecord.records.length : 0;
+    const dayMemoryRecord = allMemoryRecords.find(dr => dr.date === dateStr);
+    return dayMemoryRecord ? dayMemoryRecord.records.length : 0;
   };
 
   const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
   const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
   const days = getDaysInMonth(currentDate);
 
-  const typeLabels: Record<string, { label: string; emoji: string }> = {
+  const typeLabels: MemoryRecord<string, { label: string; emoji: string }> = {
     todo: { label: '待办', emoji: '📝' },
     feeling: { label: '感受', emoji: '💭' },
     reflection: { label: '反思', emoji: '🌟' },
@@ -146,7 +143,7 @@ export default function HistoryPage() {
   };
 
   const getTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
+    const colors: MemoryRecord<string, string> = {
       todo: 'from-blue-50 to-blue-100 border-blue-400',
       feeling: 'from-pink-50 to-pink-100 border-pink-400',
       reflection: 'from-yellow-50 to-yellow-100 border-yellow-400',
@@ -155,12 +152,12 @@ export default function HistoryPage() {
     return colors[type] || 'from-gray-50 to-gray-100 border-gray-400';
   };
 
-  const authorLabels: Record<string, string> = {
+  const authorLabels: MemoryRecord<string, string> = {
     him: '👦 他',
     her: '👧 她',
   };
 
-  const authorColors: Record<string, string> = {
+  const authorColors: MemoryRecord<string, string> = {
     him: 'bg-blue-400',
     her: 'bg-rose-400',
   };
@@ -214,20 +211,20 @@ export default function HistoryPage() {
           {days.map((day, index) => (
             <button
               key={index}
-              onClick={() => day && fetchDayRecords(formatDate(day))}
+              onClick={() => day && fetchDayMemoryRecords(formatDate(day))}
               disabled={!day}
               className={`p-2 text-center rounded-xl transition relative ${
                 day
-                  ? hasRecords(day)
+                  ? hasMemoryRecords(day)
                     ? 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200'
                     : 'hover:bg-gray-50'
                   : ''
               } ${selectedDate === formatDate(day) ? 'ring-2 ring-pink-400' : ''}`}
             >
-              <span className={hasRecords(day) ? 'text-pink-500 font-medium' : 'text-gray-600'}>
+              <span className={hasMemoryRecords(day) ? 'text-pink-500 font-medium' : 'text-gray-600'}>
                 {day || ''}
               </span>
-              {day && hasRecords(day) && (
+              {day && hasMemoryRecords(day) && (
                 <span className="absolute -bottom-0.5 left-1/2 transform -translate-x-1/2 text-xs">
                   💕
                 </span>
@@ -244,14 +241,14 @@ export default function HistoryPage() {
           </h2>
           {loading ? (
             <p className="text-gray-500">加载中...</p>
-          ) : dayRecords.length === 0 ? (
+          ) : dayMemoryRecords.length === 0 ? (
             <div className="text-center py-10 text-pink-300">
               <p className="text-4xl mb-2">💗</p>
               <p>这天还没有记录哦~</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {dayRecords.map((record) => (
+              {dayMemoryRecords.map((record) => (
                 <div
                   key={record.id}
                   className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${getTypeColor(record.type)} shadow-sm`}
@@ -273,7 +270,7 @@ export default function HistoryPage() {
                   {record.image_url && (
                     <img
                       src={record.image_url}
-                      alt="Record image"
+                      alt="MemoryRecord image"
                       className="w-full max-h-48 object-cover rounded-lg mb-3"
                     />
                   )}

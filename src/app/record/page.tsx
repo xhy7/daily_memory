@@ -3,10 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
-type RecordType = 'todo' | 'feeling' | 'reflection' | 'sweet_interaction';
-type Author = 'him' | 'her';
-
-interface Record {
+interface MemoryMemoryRecord {
   id: number;
   type: string;
   content: string;
@@ -16,15 +13,15 @@ interface Record {
   created_at: string;
 }
 
-export default function RecordPage() {
+export default function MemoryRecordPage() {
   const router = useRouter();
   const [deviceId, setDeviceId] = useState('');
-  const [recordType, setRecordType] = useState<RecordType>('sweet_interaction');
+  const [recordType, setMemoryRecordType] = useState<MemoryRecordType>('sweet_interaction');
   const [author, setAuthor] = useState<Author>('her');
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [polishing, setPolishing] = useState(false);
-  const [todayRecords, setTodayRecords] = useState<Record[]>([]);
+  const [todayMemoryRecords, setTodayMemoryRecords] = useState<MemoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,16 +45,16 @@ export default function RecordPage() {
 
   useEffect(() => {
     if (deviceId) {
-      fetchTodayRecords();
+      fetchTodayMemoryRecords();
     }
   }, [deviceId]);
 
-  const fetchTodayRecords = async () => {
+  const fetchTodayMemoryRecords = async () => {
     const today = new Date().toISOString().split('T')[0];
     try {
       const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}`);
       const data = await res.json();
-      setTodayRecords(data.records || []);
+      setTodayMemoryRecords(data.records || []);
     } catch (error) {
       console.error('Failed to fetch records:', error);
     } finally {
@@ -99,18 +96,18 @@ export default function RecordPage() {
         return;
       }
 
-      const newRecord = await res.json();
-      console.log('Record created successfully:', newRecord);
+      const newMemoryRecord = await res.json();
+      console.log('MemoryRecord created successfully:', newMemoryRecord);
       setContent('');
       setImageUrl('');
-      setTodayRecords([newRecord, ...todayRecords]);
+      setTodayMemoryRecords([newMemoryRecord, ...todayMemoryRecords]);
     } catch (error) {
       console.error('Failed to create record:', error);
       alert('保存失败，请稍后重试');
     }
   };
 
-  const handlePolish = async (id: number, currentContent: string, type: RecordType) => {
+  const handlePolish = async (id: number, currentContent: string, type: MemoryRecordType) => {
     setPolishing(true);
     try {
       const res = await fetch('/api/ai-polish', {
@@ -126,7 +123,7 @@ export default function RecordPage() {
         body: JSON.stringify({ id, polishedContent: data.polished }),
       });
 
-      setTodayRecords(todayRecords.map(r =>
+      setTodayMemoryRecords(todayMemoryRecords.map(r =>
         r.id === id ? { ...r, polished_content: data.polished } : r
       ));
     } catch (error) {
@@ -136,7 +133,7 @@ export default function RecordPage() {
     }
   };
 
-  const typeLabels: Record<string, { label: string; emoji: string }> = {
+  const typeLabels: MemoryRecord<string, { label: string; emoji: string }> = {
     todo: { label: '待办', emoji: '📝' },
     feeling: { label: '感受', emoji: '💭' },
     reflection: { label: '反思', emoji: '🌟' },
@@ -148,7 +145,7 @@ export default function RecordPage() {
   };
 
   const getTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
+    const colors: MemoryRecord<string, string> = {
       todo: 'from-blue-50 to-blue-100 border-blue-400',
       feeling: 'from-pink-50 to-pink-100 border-pink-400',
       reflection: 'from-yellow-50 to-yellow-100 border-yellow-400',
@@ -157,12 +154,12 @@ export default function RecordPage() {
     return colors[type] || 'from-gray-50 to-gray-100 border-gray-400';
   };
 
-  const authorLabels: Record<string, string> = {
+  const authorLabels: MemoryRecord<string, string> = {
     him: '他',
     her: '她',
   };
 
-  const authorColors: Record<string, string> = {
+  const authorColors: MemoryRecord<string, string> = {
     him: 'bg-blue-400',
     her: 'bg-rose-400',
   };
@@ -172,7 +169,7 @@ export default function RecordPage() {
   };
 
   const getAuthorColor = (author: string) => {
-    const colors: Record<string, string> = {
+    const colors: MemoryRecord<string, string> = {
       him: 'bg-blue-400',
       her: 'bg-rose-400',
     };
@@ -218,13 +215,13 @@ export default function RecordPage() {
           </button>
         </div>
 
-        {/* Record type selection */}
+        {/* MemoryRecord type selection */}
         <div className="flex gap-2">
           {(Object.keys(typeLabels) as string[]).map((type) => (
             <button
               key={type}
               type="button"
-              onClick={() => setRecordType(type as RecordType)}
+              onClick={() => setMemoryRecordType(type as MemoryRecordType)}
               className={`flex-1 py-2 px-2 rounded-lg transition text-sm ${
                 recordType === type
                   ? 'bg-gradient-to-r from-pink-400 to-rose-400 text-white'
@@ -302,13 +299,13 @@ export default function RecordPage() {
         <h2 className="text-xl font-semibold text-pink-500">今日甜蜜记录 💕</h2>
         {loading ? (
           <p className="text-gray-500">加载中...</p>
-        ) : todayRecords.length === 0 ? (
+        ) : todayMemoryRecords.length === 0 ? (
           <div className="text-center py-10 text-pink-300">
             <p className="text-4xl mb-2">💗</p>
             <p>今天还没有记录哦~</p>
           </div>
         ) : (
-          todayRecords.map((record) => (
+          todayMemoryRecords.map((record) => (
             <div
               key={record.id}
               className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${getTypeColor(record.type)} shadow-sm`}
@@ -330,7 +327,7 @@ export default function RecordPage() {
               {record.image_url && (
                 <img
                   src={record.image_url}
-                  alt="Record image"
+                  alt="MemoryRecord image"
                   className="w-full max-h-64 object-cover rounded-lg mb-3"
                 />
               )}
