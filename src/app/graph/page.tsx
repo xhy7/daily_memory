@@ -89,6 +89,7 @@ export default function GraphPage() {
           records={records}
           onNodeClick={handleNodeClick}
           onTagClick={handleTagClick}
+          deviceId={deviceId}
         />
       )}
 

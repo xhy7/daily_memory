@@ -14,10 +14,20 @@ export interface MemoryRecord {
   updated_at: string;
 }
 
+// 声音克隆记录
+export interface ClonedVoice {
+  id: number;
+  device_id: string;
+  voice_type: string;  // 'his' or 'her'
+  voice_id: string;   // MiniMax返回的voice_id
+  created_at: string;
+  updated_at: string;
+}
+
 export async function initializeDatabase() {
   console.log('Initializing database...');
   try {
-    // Create table if not exists
+    // Create records table if not exists
     await sql`
       CREATE TABLE IF NOT EXISTS records (
         id SERIAL PRIMARY KEY,
@@ -33,7 +43,21 @@ export async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `;
-    console.log('Table created or already exists');
+    console.log('Records table created or already exists');
+
+    // Create cloned_voices table if not exists
+    await sql`
+      CREATE TABLE IF NOT EXISTS cloned_voices (
+        id SERIAL PRIMARY KEY,
+        device_id VARCHAR(255) NOT NULL,
+        voice_type VARCHAR(10) NOT NULL,
+        voice_id VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(device_id, voice_type)
+      )
+    `;
+    console.log('Cloned voices table created or already exists');
 
     // Add columns if they don't exist
     try {
@@ -180,4 +204,40 @@ export async function updateMemoryRecordTags(
 
 export async function deleteMemoryRecord(id: number): Promise<void> {
   await sql`DELETE FROM records WHERE id = ${id}`;
+}
+
+// 保存或更新克隆的声音
+export async function saveClonedVoice(
+  deviceId: string,
+  voiceType: string,
+  voiceId: string
+): Promise<ClonedVoice> {
+  const result = await sql`
+    INSERT INTO cloned_voices (device_id, voice_type, voice_id, updated_at)
+    VALUES (${deviceId}, ${voiceType}, ${voiceId}, CURRENT_TIMESTAMP)
+    ON CONFLICT (device_id, voice_type)
+    DO UPDATE SET voice_id = ${voiceId}, updated_at = CURRENT_TIMESTAMP
+    RETURNING id, device_id, voice_type, voice_id, created_at, updated_at
+  `;
+  return result.rows[0] as unknown as ClonedVoice;
+}
+
+// 获取设备的所有克隆声音
+export async function getClonedVoices(deviceId: string): Promise<ClonedVoice[]> {
+  const result = await sql`
+    SELECT id, device_id, voice_type, voice_id, created_at, updated_at
+    FROM cloned_voices
+    WHERE device_id = ${deviceId}
+  `;
+  return result.rows as unknown as ClonedVoice[];
+}
+
+// 获取特定类型的克隆声音
+export async function getClonedVoice(deviceId: string, voiceType: string): Promise<ClonedVoice | null> {
+  const result = await sql`
+    SELECT id, device_id, voice_type, voice_id, created_at, updated_at
+    FROM cloned_voices
+    WHERE device_id = ${deviceId} AND voice_type = ${voiceType}
+  `;
+  return result.rows[0] as unknown as ClonedVoice || null;
 }

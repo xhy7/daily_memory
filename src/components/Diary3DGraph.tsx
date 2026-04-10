@@ -20,6 +20,7 @@ interface Diary3DGraphProps {
   records: GraphRecord[];
   onNodeClick?: (record: GraphRecord) => void;
   onTagClick?: (tag: string) => void;
+  deviceId?: string;
 }
 
 // Generate beautiful galaxy-like spiral positions
@@ -333,12 +334,56 @@ function GalaxyScene({
 export default function Diary3DGraph({
   records,
   onNodeClick,
-  onTagClick
+  onTagClick,
+  deviceId: propDeviceId
 }: Diary3DGraphProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [playingTTS, setPlayingTTS] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 获取设备ID
+  const deviceId = propDeviceId || localStorage.getItem('coupleDeviceId') || 'couple_memory_001';
+
+  // TTS 朗读功能 - 使用克隆的声音
+  const playTTS = useCallback(async (text: string, author?: string) => {
+    if (playingTTS) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setPlayingTTS(false);
+      return;
+    }
+
+    setPlayingTTS(true);
+    try {
+      // 根据作者选择声音类型，默认用她的声音
+      const voiceType = (author === 'him') ? 'his' : 'her';
+
+      const res = await fetch('/api/voice-clone', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voiceType, deviceId })
+      });
+      const data = await res.json();
+
+      if (data.audio) {
+        const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+        audioRef.current = audio;
+        audio.onended = () => setPlayingTTS(false);
+        audio.onerror = () => setPlayingTTS(false);
+        await audio.play();
+      } else {
+        console.error('TTS failed:', data.error);
+        setPlayingTTS(false);
+      }
+      console.error('TTS error:', error);
+      setPlayingTTS(false);
+    }
+  }, [playingTTS]);
 
   // Calculate galaxy positions
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
@@ -468,6 +513,16 @@ export default function Diary3DGraph({
             )}
 
             <p className="text-white text-sm mb-3">{selectedRecord.content}</p>
+
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                onClick={() => playTTS(selectedRecord.content, selectedRecord.author)}
+                disabled={playingTTS}
+                className="px-3 py-1.5 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-full text-xs flex items-center gap-1 hover:from-pink-600 hover:to-rose-600 disabled:opacity-50"
+              >
+                {playingTTS ? '🔊 播放中...' : '🔊 朗读'}
+              </button>
+            </div>
 
             {selectedRecord.tags && selectedRecord.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">

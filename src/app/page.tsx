@@ -68,6 +68,9 @@ export default function Home() {
           <Link href="/graph" className="block p-5 bg-gradient-to-r from-purple-400 to-indigo-400 text-white rounded-2xl text-center hover:from-purple-500 hover:to-indigo-500 transition shadow-lg transform hover:scale-[1.02]">
             <span className="text-xl font-medium">🔮 3D记忆图谱</span>
           </Link>
+          <Link href="/voice-clone" className="block p-5 bg-gradient-to-r from-blue-400 to-cyan-400 text-white rounded-2xl text-center hover:from-blue-500 hover:to-cyan-500 transition shadow-lg transform hover:scale-[1.02]">
+            <span className="text-xl font-medium">🎙️ 声音克隆</span>
+          </Link>
         </div>
 
         {/* Sweet quote */}
