@@ -380,10 +380,11 @@ export default function Diary3DGraph({
         console.error('TTS failed:', data.error);
         setPlayingTTS(false);
       }
+    } catch (error) {
       console.error('TTS error:', error);
       setPlayingTTS(false);
     }
-  }, [playingTTS]);
+  }, [playingTTS, deviceId]);
 
   // Calculate galaxy positions
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
