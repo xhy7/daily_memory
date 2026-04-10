@@ -2,47 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
 
+export const runtime = 'nodejs';
+
 // 存储已克隆的声音ID
 let clonedVoices: { his: string; her: string } = { his: '', her: '' };
 let isInitialized = false;
 
-// 获取项目根目录
-function getProjectRoot(): string {
-  // Vercel 环境变量
-  if (process.env.VERCEL) {
-    // 在 Vercel 环境中，根目录是 /var/task
-    return '/var/task';
-  }
-  // 本地开发 - 使用项目根目录
-  return process.cwd();
-}
+// 尝试多个可能的 sounds 目录位置
+async function findSoundsDir(): Promise<string | null> {
+  const possiblePaths = [
+    '/var/task/sounds',
+    '/var/task/src/../sounds',
+    process.cwd() + '/sounds',
+    process.cwd() + '/../sounds',
+  ];
 
-// 检查并列出 sounds 目录内容（调试用）
-async function debugSoundsDir() {
-  const projectRoot = getProjectRoot();
-  const soundsDir = path.join(projectRoot, 'sounds');
-  console.log('=== Debug Sounds Directory ===');
-  console.log('Project root:', projectRoot);
-  console.log('Sounds dir:', soundsDir);
-
-  try {
-    const exists = await fs.access(soundsDir).then(() => true).catch(() => false);
-    console.log('Sounds directory exists:', exists);
-
-    if (exists) {
-      const files = await fs.readdir(soundsDir);
-      console.log('Sounds directory contents:', files);
-
-      for (const file of files) {
-        const filePath = path.join(soundsDir, file);
-        const stats = await fs.stat(filePath);
-        console.log(`  ${file}: ${stats.size} bytes`);
-      }
+  for (const dir of possiblePaths) {
+    try {
+      await fs.access(dir);
+      console.log(`Found sounds directory at: ${dir}`);
+      return dir;
+    } catch {
+      console.log(`Sounds directory not found at: ${dir}`);
     }
-  } catch (e) {
-    console.error('Error reading sounds directory:', e);
   }
-  console.log('=== End Debug ===');
+
+  return null;
 }
 
 // 初始化：从sounds文件夹读取音频文件并克隆
@@ -52,27 +37,20 @@ async function initializeVoices() {
     return;
   }
 
-  // Debug: 列出 sounds 目录内容
-  await debugSoundsDir();
-
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.error('API Key not configured');
     return;
   }
 
-  const projectRoot = getProjectRoot();
-  const soundsDir = path.join(projectRoot, 'sounds');
-  console.log('Project root:', projectRoot);
-  console.log('Sounds directory:', soundsDir);
-
-  // 检查sounds目录是否存在
-  try {
-    await fs.access(soundsDir);
-    console.log('Sounds directory exists');
-  } catch (e) {
-    console.error('Sounds directory does not exist:', e);
+  // 尝试找到 sounds 目录
+  const soundsDir = await findSoundsDir();
+  if (!soundsDir) {
+    console.error('Could not find sounds directory in any location');
+    return;
   }
+
+  console.log('Using sounds directory:', soundsDir);
 
   const voiceFiles: { type: 'his' | 'her'; filename: string }[] = [
     { type: 'his', filename: 'his_voice.m4a' },
