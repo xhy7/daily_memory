@@ -65,7 +65,7 @@ async function initializeVoices() {
     return;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.MINIMAX_API_KEY;
   if (!apiKey) {
     console.error('API Key not configured');
     return;
@@ -110,17 +110,30 @@ async function initializeVoices() {
 
       let uploadResponse;
       try {
+        console.log(`[${voice.type}] API Key prefix:`, apiKey.substring(0, 20));
+        console.log(`[${voice.type}] Attempting fetch to: ${uploadUrl}`);
+
+        // 使用 agent 选项尝试解决 SSL 问题
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
         uploadResponse = await fetch(uploadUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`
           },
-          body: uploadFormData
+          body: uploadFormData,
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
       } catch (fetchError: unknown) {
         console.error(`[${voice.type}] Upload fetch failed:`, fetchError);
-        const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-        console.error(`[${voice.type}] Error details:`, errorMsg);
+        // 详细捕获错误原因
+        if (fetchError instanceof Error) {
+          console.error(`[${voice.type}] Error name:`, fetchError.name);
+          console.error(`[${voice.type}] Error message:`, fetchError.message);
+          console.error(`[${voice.type}] Error cause:`, fetchError.cause);
+        }
         continue;
       }
 
@@ -170,6 +183,17 @@ async function initializeVoices() {
 
       let cloneResponse;
       try {
+        console.log(`[${voice.type}] Clone URL: ${cloneUrl}`);
+        console.log(`[${voice.type}] Clone request body:`, JSON.stringify({
+          file_id: fileId,
+          voice_id: voiceId,
+          text: sampleText,
+          model: 'speech-2.8'
+        }));
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
         cloneResponse = await fetch(cloneUrl, {
           method: 'POST',
           headers: {
@@ -181,12 +205,17 @@ async function initializeVoices() {
             voice_id: voiceId,
             text: sampleText,
             model: 'speech-2.8'
-          })
+          }),
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
       } catch (fetchError: unknown) {
         console.error(`[${voice.type}] Clone fetch failed:`, fetchError);
-        const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-        console.error(`[${voice.type}] Error details:`, errorMsg);
+        if (fetchError instanceof Error) {
+          console.error(`[${voice.type}] Error name:`, fetchError.name);
+          console.error(`[${voice.type}] Error message:`, fetchError.message);
+          console.error(`[${voice.type}] Error cause:`, fetchError.cause);
+        }
         continue;
       }
 
@@ -251,7 +280,7 @@ export async function POST(request: NextRequest) {
     console.log('Initializing voices...');
     await initializeVoices();
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY || process.env.MINIMAX_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
     }
