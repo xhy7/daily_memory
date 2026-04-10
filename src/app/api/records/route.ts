@@ -5,14 +5,6 @@ import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, u
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-  },
-};
-
 // Initialize database on first request
 let dbInitialized = false;
 
