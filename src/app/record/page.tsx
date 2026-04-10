@@ -124,14 +124,13 @@ export default function RecordPage() {
       console.log('AI tags response:', data);
 
       if (data.error) {
-        alert('提取标签失败: ' + data.error);
+        alert('提取标签失败: ' + (data.details || data.error));
         setExtracting(false);
         return;
       }
 
       if (data.tags && data.tags.length > 0) {
         if (recordId === -1) {
-          // For new record - just show tags in UI temporarily
           alert('提取到标签: ' + data.tags.join(', '));
         } else {
           await fetch('/api/records', {
