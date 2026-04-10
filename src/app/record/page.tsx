@@ -39,7 +39,7 @@ export default function RecordPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editImages, setEditImages] = useState<string[]>([]);
-  const [editImageInputRef, setEditImageInputRef] = useState<React.RefObject<HTMLInputElement> | null>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
@@ -354,6 +354,10 @@ export default function RecordPage() {
       ? record.image_urls
       : (record.image_url ? [record.image_url] : []);
     setEditImages(existingImages);
+    // Reset file input to allow re-selecting same file
+    if (editFileInputRef.current) {
+      editFileInputRef.current.value = '';
+    }
   };
 
   const handleCancelEdit = () => {
@@ -422,19 +426,35 @@ export default function RecordPage() {
     if (!files || files.length === 0) return;
 
     let loadedCount = 0;
+    let totalToLoad = 0;
     const newImages: string[] = [];
 
+    // First pass: count files to load (excluding oversized)
     Array.from(files).forEach((file) => {
       if (file.size > 4.5 * 1024 * 1024) {
         alert(`图片 ${file.name} 超过4.5MB，将被跳过`);
         return;
       }
+      totalToLoad++;
+    });
+
+    if (totalToLoad === 0) {
+      // Reset input even when all files are oversized
+      if (e.target) {
+        e.target.value = '';
+      }
+      return;
+    }
+
+    // Second pass: load valid files
+    Array.from(files).forEach((file) => {
+      if (file.size > 4.5 * 1024 * 1024) return;
 
       const reader = new FileReader();
       reader.onloadend = () => {
         newImages.push(reader.result as string);
         loadedCount++;
-        if (loadedCount === files.length) {
+        if (loadedCount === totalToLoad) {
           setEditImages(prev => [...prev, ...newImages].slice(0, 9));
         }
       };
@@ -609,7 +629,7 @@ export default function RecordPage() {
                   <div className="mb-3">
                     <input
                       type="file"
-                      id={`edit-image-${record.id}`}
+                      ref={editFileInputRef}
                       onChange={handleEditImageUpload}
                       accept="image/*"
                       multiple
@@ -617,7 +637,7 @@ export default function RecordPage() {
                     />
                     <button
                       type="button"
-                      onClick={() => document.getElementById(`edit-image-${record.id}`)?.click()}
+                      onClick={() => editFileInputRef.current?.click()}
                       className="py-1 px-3 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition text-sm flex items-center gap-1"
                     >
                       📷 添加图片
