@@ -106,13 +106,23 @@ async function initializeVoices() {
       uploadFormData.append('purpose', 'voice_clone');
       uploadFormData.append('file', new Blob([fileBuffer]), fileName);
 
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: uploadFormData
-      });
+      console.log(`[${voice.type}] Uploading to ${uploadUrl}...`);
+
+      let uploadResponse;
+      try {
+        uploadResponse = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: uploadFormData
+        });
+      } catch (fetchError: unknown) {
+        console.error(`[${voice.type}] Upload fetch failed:`, fetchError);
+        const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+        console.error(`[${voice.type}] Error details:`, errorMsg);
+        continue;
+      }
 
       console.log(`[${voice.type}] Upload response status:`, uploadResponse.status);
 
@@ -156,19 +166,29 @@ async function initializeVoices() {
       console.log(`[${voice.type}] Calling clone API with voice_id: ${voiceId}...`);
 
       const cloneUrl = 'https://api.minimax.com/v1/voice_clone';
-      const cloneResponse = await fetch(cloneUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          file_id: fileId,
-          voice_id: voiceId,
-          text: sampleText,
-          model: 'speech-2.8'
-        })
-      });
+      console.log(`[${voice.type}] Clone URL: ${cloneUrl}`);
+
+      let cloneResponse;
+      try {
+        cloneResponse = await fetch(cloneUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            file_id: fileId,
+            voice_id: voiceId,
+            text: sampleText,
+            model: 'speech-2.8'
+          })
+        });
+      } catch (fetchError: unknown) {
+        console.error(`[${voice.type}] Clone fetch failed:`, fetchError);
+        const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+        console.error(`[${voice.type}] Error details:`, errorMsg);
+        continue;
+      }
 
       console.log(`[${voice.type}] Clone response status:`, cloneResponse.status);
 
@@ -276,20 +296,27 @@ export async function POST(request: NextRequest) {
     console.log('TTS request:', { text: textContent, voiceId: selectedVoice });
 
     // 调用 TTS API
-    const response = await fetch('https://api.minimax.com/v1/t2a_v2', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'speech-2.8',
-        text: textContent,
-        voice_id: selectedVoice,
-        speed: 1.0,
-        format: 'mp3'
-      })
-    });
+    let response;
+    try {
+      response = await fetch('https://api.minimax.com/v1/t2a_v2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'speech-2.8',
+          text: textContent,
+          voice_id: selectedVoice,
+          speed: 1.0,
+          format: 'mp3'
+        })
+      });
+    } catch (fetchError: unknown) {
+      console.error('TTS fetch failed:', fetchError);
+      const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      return NextResponse.json({ error: 'TTS请求失败', details: errorMsg }, { status: 500 });
+    }
 
     console.log('TTS response status:', response.status);
 
