@@ -67,7 +67,7 @@ export async function createMemoryRecord(
   const imageUrl = Array.isArray(imageUrls) ? imageUrls[0] : (imageUrls || null);
   const imageUrlsJson = Array.isArray(imageUrls) && imageUrls.length > 0
     ? JSON.stringify(imageUrls)
-    : null;
+    : '[]';
 
   const result = await sql`
     INSERT INTO records (device_id, type, content, image_url, image_urls, author, tags)
@@ -76,10 +76,15 @@ export async function createMemoryRecord(
   `;
 
   const row = result.rows[0];
-  // Parse JSON fields properly
+  // Parse JSON fields properly, also handle backwards compatibility with old image_url field
+  const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
+  const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
+    ? imageUrlsParsed
+    : (row.image_url ? [row.image_url] : []);
+
   return {
     ...row,
-    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    image_urls: finalImageUrls,
     tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
   } as unknown as MemoryRecord;
 }
@@ -91,12 +96,19 @@ export async function getMemoryRecordsByDevice(deviceId: string): Promise<Memory
     WHERE device_id = ${deviceId}
     ORDER BY created_at DESC
   `;
-  // Parse JSON fields properly
-  return result.rows.map(row => ({
-    ...row,
-    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
-    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
-  })) as unknown as MemoryRecord[];
+  // Parse JSON fields properly, handle backwards compatibility
+  return result.rows.map(row => {
+    const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
+    const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
+      ? imageUrlsParsed
+      : (row.image_url ? [row.image_url] : []);
+
+    return {
+      ...row,
+      image_urls: finalImageUrls,
+      tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+    };
+  }) as unknown as MemoryRecord[];
 }
 
 export async function getMemoryRecordsByDate(deviceId: string, date: string): Promise<MemoryRecord[]> {
@@ -106,11 +118,18 @@ export async function getMemoryRecordsByDate(deviceId: string, date: string): Pr
     WHERE device_id = ${deviceId} AND DATE(created_at) = ${date}
     ORDER BY created_at DESC
   `;
-  return result.rows.map(row => ({
-    ...row,
-    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
-    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
-  })) as unknown as MemoryRecord[];
+  return result.rows.map(row => {
+    const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
+    const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
+      ? imageUrlsParsed
+      : (row.image_url ? [row.image_url] : []);
+
+    return {
+      ...row,
+      image_urls: finalImageUrls,
+      tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+    };
+  }) as unknown as MemoryRecord[];
 }
 
 export async function updateMemoryRecordPolishedContent(
@@ -124,9 +143,14 @@ export async function updateMemoryRecordPolishedContent(
     RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
   const row = result.rows[0];
+  const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
+  const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
+    ? imageUrlsParsed
+    : (row.image_url ? [row.image_url] : []);
+
   return {
     ...row,
-    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    image_urls: finalImageUrls,
     tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
   } as unknown as MemoryRecord;
 }
@@ -142,9 +166,14 @@ export async function updateMemoryRecordTags(
     RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
   const row = result.rows[0];
+  const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
+  const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
+    ? imageUrlsParsed
+    : (row.image_url ? [row.image_url] : []);
+
   return {
     ...row,
-    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    image_urls: finalImageUrls,
     tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
   } as unknown as MemoryRecord;
 }
