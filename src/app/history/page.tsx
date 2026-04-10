@@ -13,6 +13,7 @@ interface MemoryItem {
   content: string;
   polished_content?: string;
   image_url?: string;
+  image_urls?: string[];
   tags?: string[];
   author?: string;
   created_at: string;
@@ -269,12 +270,17 @@ export default function HistoryPage() {
                     </span>
                   </div>
 
-                  {record.image_url && (
-                    <img
-                      src={record.image_url}
-                      alt="Record image"
-                      className="w-full max-h-48 object-cover rounded-lg mb-3"
-                    />
+                  {/* Support both single image and multiple images */}
+                  {(record.image_url || record.image_urls) && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {record.image_urls ? (
+                        record.image_urls.map((url, idx) => (
+                          <img key={idx} src={url} alt={`记录图片${idx + 1}`} className="w-full max-h-48 object-cover rounded-lg" />
+                        ))
+                      ) : (
+                        <img src={record.image_url} alt="记录图片" className="w-full max-h-48 object-cover rounded-lg" />
+                      )}
+                    </div>
                   )}
 
                   <p className="mb-2 text-gray-700">{record.content}</p>

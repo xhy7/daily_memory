@@ -50,13 +50,16 @@ export async function POST(request: NextRequest) {
     await ensureDatabase();
 
     const body = await request.json();
-    const { deviceId, type, content, imageUrl, author } = body;
+    const { deviceId, type, content, imageUrl, imageUrls, author } = body;
 
     if (!deviceId || !type || !content) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const record = await createMemoryRecord(deviceId, type, content, imageUrl, author);
+    // Support both single image and multiple images
+    const finalImageUrls = imageUrls || (imageUrl ? [imageUrl] : undefined);
+
+    const record = await createMemoryRecord(deviceId, type, content, finalImageUrls, author);
     return NextResponse.json(record);
   } catch (error) {
     console.error('Failed to create record:', error);

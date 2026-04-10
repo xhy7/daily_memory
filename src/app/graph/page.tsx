@@ -18,6 +18,7 @@ interface RecordNode {
   id: number;
   content: string;
   image_url?: string;
+  image_urls?: string[];
   tags?: string[];
   author?: string;
   created_at: string;

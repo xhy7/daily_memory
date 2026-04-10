@@ -8,38 +8,43 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { content, imageUrl } = body;
+    const { content, imageUrl, existingTags } = body;
 
     if (!content && !imageUrl) {
       return NextResponse.json({ error: 'Content or image is required' }, { status: 400 });
     }
 
     const textContent = content?.trim() || '';
+    const existingTagsStr = existingTags && existingTags.length > 0
+      ? `已有标签库：${existingTags.join('、')}。只选择与当前记录内容高度相关的标签！如果已有标签都不贴切，坚决不要选择它们，直接创建新标签！`
+      : '暂无已有标签，请自行创建合适的标签。';
 
-    // 根据 requirements.md 的要求设计提示词
+    // 根据 requirements.md 的要求设计提示词，优先考虑已有标签
     const prompt = `你是「情侣甜蜜日记」AI标签提取助手，核心目标是为用户的情侣日常记录提取**高质量、可用于三维视图串联的语义标签**。
 
 输入格式：
 - user_content: "${textContent}"
 - image_info: "${imageUrl ? '有图片' : '无图片'}"
+- ${existingTagsStr}
 - user_request: "无"
 
 ---
 
 ### 📌 标签提取规则（严格遵守）
-1. **语义优先，绝对禁止硬拆**：绝不从句子中简单抽取单个词语，必须提炼**有完整语义、符合语境、适合聚合关联的标签**
-2. **多维度覆盖**（根据内容灵活提取）：
+1. **优先使用已有标签**：首先从已有标签库中选择合适的标签！
+2. **语义优先，禁止硬拆**：绝不从句子中简单抽取单个词语，必须提炼**有完整语义、符合语境、适合聚合关联的标签**
+3. **多维度覆盖**（根据内容灵活提取）：
    - 主题标签：核心事件（如「化妆吐槽」「情侣撒娇」「日常打卡」）
    - 情感标签：情绪氛围（如「甜蜜互动」「搞笑吐槽」「暖心日常」）
    - 人物标签：关联人物（如「姐姐」「男友」）
    - 场景标签：发生场景（如「线上聊天」「居家日常」「约会出行」）
    - 特征标签：关键细节（如「周末约会」「2小时」）
-3. **标签规范**：
+4. **标签规范**：
    - 单个标签2-8字，简洁精准
    - 标签数量3-8个，100%去重
    - 标签必须具备**可串联性**：能关联不同记录
-4. **语境灵活适配**：捕捉语气（撒娇、吐槽、甜蜜），标签需贴合语境
-5. **氛围要求**：符合情侣日常的温馨氛围，避免生硬、冰冷的词汇
+5. **语境灵活适配**：捕捉语气（撒娇、吐槽、甜蜜），标签需贴合语境
+6. **氛围要求**：符合情侣日常的温馨氛围，避免生硬、冰冷的词汇
 
 ---
 
@@ -74,7 +79,41 @@ export async function POST(request: NextRequest) {
     console.log('MiniMax API status:', response.status);
     console.log('MiniMax API response:', JSON.stringify(data));
 
-    // 检查 API 错误
+    // 检查 API 过载错误 (529)，添加重试逻辑
+    if (response.status === 529 || data.error?.type === 'overloaded_error') {
+      console.log('API overloaded, retrying after 2 seconds...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const retryResponse = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.5
+        })
+      });
+
+      const retryData = await retryResponse.json();
+      console.log('Retry response:', JSON.stringify(retryData));
+
+      if (retryResponse.ok && retryData.choices && retryData.choices.length > 0) {
+        const responseText = retryData.choices[0].message.content.trim();
+        let tags = parseTags(responseText);
+        if (tags.length === 0) {
+          tags = extractSemanticTags(textContent);
+        }
+        return NextResponse.json({
+          tags: tags.slice(0, 8),
+          debug: { rawResponse: responseText, parsedCount: tags.length }
+        });
+      }
+    }
+
+    // 检查其他 API 错误
     if (!response.ok || !data.choices || data.choices.length === 0) {
       const errorMsg = data.base_resp?.status_msg || data.error?.message || 'API返回为空';
       return NextResponse.json({

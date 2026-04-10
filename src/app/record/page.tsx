@@ -13,6 +13,7 @@ interface MemoryItem {
   content: string;
   polished_content?: string;
   image_url?: string;
+  image_urls?: string[];
   tags?: string[];
   author?: string;
   created_at: string;
@@ -24,7 +25,7 @@ export default function RecordPage() {
   const [recordType, setRecordType] = useState<string>('sweet_interaction');
   const [author, setAuthor] = useState<string>('her');
   const [content, setContent] = useState('');
-  const [imageUrl, setImageUrl] = useState<string>('');
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [todayRecords, setTodayRecords] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,16 +71,40 @@ export default function RecordPage() {
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setUploading(true);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImageUrl(reader.result as string);
-      setUploading(false);
-    };
-    reader.readAsDataURL(file);
+    let loadedCount = 0;
+    const newImages: string[] = [];
+
+    Array.from(files).forEach((file) => {
+      // Check file size - warn if too large
+      if (file.size > 4.5 * 1024 * 1024) {
+        alert(`图片 ${file.name} 超过4.5MB，将被跳过`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        newImages.push(reader.result as string);
+        loadedCount++;
+        if (loadedCount === files.length) {
+          setImageUrls(prev => [...prev, ...newImages].slice(0, 9)); // Max 9 images
+          setUploading(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImageUrls(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -92,7 +117,13 @@ export default function RecordPage() {
       const res = await fetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId, type: recordType, content, imageUrl, author }),
+        body: JSON.stringify({
+          deviceId,
+          type: recordType,
+          content,
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+          author
+        }),
       });
 
       if (!res.ok) {
@@ -103,7 +134,7 @@ export default function RecordPage() {
 
       const newRecord = await res.json();
       setContent('');
-      setImageUrl('');
+      setImageUrls([]);
       setTodayRecords([newRecord, ...todayRecords]);
     } catch (error) {
       console.error('Failed to create record:', error);
@@ -114,10 +145,19 @@ export default function RecordPage() {
   const handleExtractTags = async (recordId: number, currentContent: string, currentImageUrl?: string) => {
     setExtracting(true);
     try {
+      // Get all existing tags from today's records
+      const allTags = new Set<string>();
+      todayRecords.forEach(r => r.tags?.forEach(t => allTags.add(t)));
+      const existingTags = Array.from(allTags);
+
       const res = await fetch('/api/ai-tags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: currentContent, imageUrl: currentImageUrl }),
+        body: JSON.stringify({
+          content: currentContent,
+          imageUrl: currentImageUrl,
+          existingTags
+        }),
       });
       const data = await res.json();
 
@@ -310,6 +350,7 @@ export default function RecordPage() {
             ref={fileInputRef}
             onChange={handleImageUpload}
             accept="image/*"
+            multiple
             className="hidden"
           />
           <button
@@ -318,18 +359,22 @@ export default function RecordPage() {
             disabled={uploading}
             className="py-2 px-4 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition flex items-center gap-2"
           >
-            {uploading ? '上传中...' : '📷 添加图片'}
+            {uploading ? '上传中...' : '📷 添加图片(最多9张)'}
           </button>
-          {imageUrl && (
-            <div className="relative">
-              <img src={imageUrl} alt="Preview" className="w-16 h-16 object-cover rounded-lg" />
-              <button
-                type="button"
-                onClick={() => setImageUrl('')}
-                className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs"
-              >
-                ✕
-              </button>
+          {imageUrls.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {imageUrls.map((url, idx) => (
+                <div key={idx} className="relative">
+                  <img src={url} alt={`预览${idx + 1}`} className="w-16 h-16 object-cover rounded-lg" />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(idx)}
+                    className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -356,11 +401,11 @@ export default function RecordPage() {
           </button>
           <button
             type="button"
-            onClick={() => handleExtractTags(-1, content, imageUrl)}
-            disabled={(!content.trim() && !imageUrl) || extracting}
+            onClick={() => handleExtractTags(-1, content, imageUrls[0])}
+            disabled={(!content.trim() && imageUrls.length === 0) || extracting}
             className="flex-1 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white rounded-xl hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 shadow-md"
           >
-            {extracting ? '🏷️ 提取中...' : '🏷️ AI提取标签'}
+            {extracting ? '✨ 分析中...' : '✨ 智能标签'}
           </button>
         </div>
       </form>
@@ -394,12 +439,17 @@ export default function RecordPage() {
                 </span>
               </div>
 
-              {record.image_url && (
-                <img
-                  src={record.image_url}
-                  alt="Record image"
-                  className="w-full max-h-64 object-cover rounded-lg mb-3"
-                />
+              {/* Support both single image and multiple images */}
+              {(record.image_url || record.image_urls) && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {record.image_urls ? (
+                    record.image_urls.map((url, idx) => (
+                      <img key={idx} src={url} alt={`记录图片${idx + 1}`} className="w-full max-h-64 object-cover rounded-lg" />
+                    ))
+                  ) : (
+                    <img src={record.image_url} alt="记录图片" className="w-full max-h-64 object-cover rounded-lg" />
+                  )}
+                </div>
               )}
 
               <p className="mb-2 text-gray-700">{record.content}</p>
@@ -429,7 +479,7 @@ export default function RecordPage() {
                 disabled={extracting}
                 className="mt-2 text-sm text-purple-500 hover:text-purple-700 disabled:opacity-50"
               >
-                {record.tags && record.tags.length > 0 ? '🏷️ 重新提取标签' : '🏷️ AI提取标签'}
+                {record.tags && record.tags.length > 0 ? '✨ 重新分析' : '✨ 智能标签'}
               </button>
             </div>
           ))

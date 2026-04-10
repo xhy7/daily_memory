@@ -7,6 +7,7 @@ export interface MemoryRecord {
   content: string;
   polished_content?: string;
   image_url?: string;
+  image_urls?: string[];
   tags?: string[];
   author?: string;
   created_at: string;
@@ -25,6 +26,7 @@ export async function initializeDatabase() {
         content TEXT NOT NULL,
         polished_content TEXT,
         image_url TEXT,
+        image_urls JSONB DEFAULT '[]',
         tags JSONB DEFAULT '[]',
         author VARCHAR(10),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -33,12 +35,18 @@ export async function initializeDatabase() {
     `;
     console.log('Table created or already exists');
 
-    // Add tags column if it doesn't exist (for existing databases)
+    // Add columns if they don't exist
+    try {
+      await sql`ALTER TABLE records ADD COLUMN image_urls JSONB DEFAULT '[]'`;
+      console.log('image_urls column added');
+    } catch (e) {
+      console.log('image_urls column already exists or error:', e);
+    }
+
     try {
       await sql`ALTER TABLE records ADD COLUMN tags JSONB DEFAULT '[]'`;
       console.log('Tags column added');
     } catch (e) {
-      // Column already exists, ignore
       console.log('Tags column already exists or error:', e);
     }
   } catch (error) {
@@ -51,21 +59,25 @@ export async function createMemoryRecord(
   deviceId: string,
   type: string,
   content: string,
-  imageUrl?: string,
+  imageUrls?: string[] | string,
   author?: string,
   tags?: string[]
 ): Promise<MemoryRecord> {
+  // Handle both single image and multiple images
+  const imageUrl = Array.isArray(imageUrls) ? imageUrls[0] : imageUrls;
+  const imageUrlsJson = Array.isArray(imageUrls) ? JSON.stringify(imageUrls) : '[]';
+
   const result = await sql`
-    INSERT INTO records (device_id, type, content, image_url, author, tags)
-    VALUES (${deviceId}, ${type}, ${content}, ${imageUrl || null}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'})
-    RETURNING id, device_id, type, content, polished_content, image_url, tags, author, created_at, updated_at
+    INSERT INTO records (device_id, type, content, image_url, image_urls, author, tags)
+    VALUES (${deviceId}, ${type}, ${content}, ${imageUrl || null}, ${imageUrlsJson}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'})
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
   return result.rows[0] as unknown as MemoryRecord;
 }
 
 export async function getMemoryRecordsByDevice(deviceId: string): Promise<MemoryRecord[]> {
   const result = await sql`
-    SELECT id, device_id, type, content, polished_content, image_url, tags, author, created_at, updated_at
+    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
     FROM records
     WHERE device_id = ${deviceId}
     ORDER BY created_at DESC
@@ -75,7 +87,7 @@ export async function getMemoryRecordsByDevice(deviceId: string): Promise<Memory
 
 export async function getMemoryRecordsByDate(deviceId: string, date: string): Promise<MemoryRecord[]> {
   const result = await sql`
-    SELECT id, device_id, type, content, polished_content, image_url, tags, author, created_at, updated_at
+    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
     FROM records
     WHERE device_id = ${deviceId} AND DATE(created_at) = ${date}
     ORDER BY created_at DESC
@@ -91,7 +103,7 @@ export async function updateMemoryRecordPolishedContent(
     UPDATE records
     SET polished_content = ${polishedContent}, updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id}
-    RETURNING id, device_id, type, content, polished_content, image_url, tags, author, created_at, updated_at
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
   return result.rows[0] as unknown as MemoryRecord;
 }
@@ -104,7 +116,7 @@ export async function updateMemoryRecordTags(
     UPDATE records
     SET tags = ${JSON.stringify(tags)}, updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id}
-    RETURNING id, device_id, type, content, polished_content, image_url, tags, author, created_at, updated_at
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
   return result.rows[0] as unknown as MemoryRecord;
 }
