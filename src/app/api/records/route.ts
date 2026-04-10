@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, deleteMemoryRecord, initializeDatabase } from '@/lib/db';
 
+// Increase body parser limit for large image uploads
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 // Initialize database on first request
 let dbInitialized = false;
 
