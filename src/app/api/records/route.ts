@@ -60,22 +60,22 @@ export async function GET(request: NextRequest) {
     const paginatedRecords = records.slice(offset, offset + limit);
 
     // 字段过滤
-    let finalRecords: Record<string, unknown>[] = paginatedRecords;
-    if (fields) {
-      const fieldList = fields.split(',').map(f => f.trim());
-      finalRecords = paginatedRecords.map(record => {
-        const filtered: Record<string, unknown> = {};
-        fieldList.forEach(field => {
-          if (field in record) {
-            filtered[field] = (record as unknown as Record<string, unknown>)[field];
-          }
-        });
-        return filtered;
-      });
-    }
+    const filteredRecords = fields
+      ? paginatedRecords.map(record => {
+          const fieldList = fields.split(',').map(f => f.trim());
+          const filtered: Record<string, unknown> = {};
+          fieldList.forEach(field => {
+            const recordAny = record as unknown as Record<string, unknown>;
+            if (field in recordAny) {
+              filtered[field] = recordAny[field];
+            }
+          });
+          return filtered;
+        })
+      : paginatedRecords;
 
     const response = NextResponse.json({
-      records: finalRecords,
+      records: filteredRecords,
       pagination: {
         total,
         limit,
