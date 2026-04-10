@@ -30,6 +30,7 @@ export default function RecordPage() {
   const [todayRecords, setTodayRecords] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -439,16 +440,26 @@ export default function RecordPage() {
                 </span>
               </div>
 
-              {/* Support both single image and multiple images */}
+              {/* Support both single image and multiple images with click to view */}
               {(record.image_url || record.image_urls) && (
                 <div className="flex flex-wrap gap-2 mb-3">
-                  {record.image_urls ? (
+                  {record.image_urls && record.image_urls.length > 0 ? (
                     record.image_urls.map((url, idx) => (
-                      <img key={idx} src={url} alt={`记录图片${idx + 1}`} className="w-full max-h-64 object-cover rounded-lg" />
+                      <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
+                        <img src={url} alt={`记录图片${idx + 1}`} className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
+                        </div>
+                      </button>
                     ))
-                  ) : (
-                    <img src={record.image_url} alt="记录图片" className="w-full max-h-64 object-cover rounded-lg" />
-                  )}
+                  ) : record.image_url ? (
+                    <button onClick={() => setSelectedImage(record.image_url!)} className="relative group">
+                      <img src={record.image_url} alt="记录图片" className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
+                      </div>
+                    </button>
+                  ) : null}
                 </div>
               )}
 
@@ -485,6 +496,26 @@ export default function RecordPage() {
           ))
         )}
       </div>
+
+      {/* Image Lightbox Modal */}
+      {selectedImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setSelectedImage(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition"
+            onClick={() => setSelectedImage(null)}
+          >
+            ✕
+          </button>
+          <img
+            src={selectedImage}
+            alt="查看大图"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+          />
+        </div>
+      )}
     </div>
   );
 }

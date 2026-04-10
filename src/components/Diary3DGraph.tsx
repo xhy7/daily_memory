@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState, useCallback } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Sphere, Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -22,22 +22,32 @@ interface Diary3DGraphProps {
   onTagClick?: (tag: string) => void;
 }
 
-// Generate positions in 3D space
-function calculatePositions(records: GraphRecord[], radius: number = 8) {
-  return records.map((_, index) => {
-    const phi = Math.acos(-1 + (2 * index) / records.length);
-    const theta = Math.sqrt(records.length * Math.PI) * phi;
+// Generate beautiful galaxy-like spiral positions
+function calculateGalaxyPositions(records: GraphRecord[], radius: number = 10) {
+  const positions: THREE.Vector3[] = [];
+  const numRecords = records.length;
 
-    return new THREE.Vector3(
-      radius * Math.cos(theta) * Math.sin(phi),
-      radius * Math.sin(theta) * Math.sin(phi),
-      radius * Math.cos(phi)
-    );
-  });
+  for (let i = 0; i < numRecords; i++) {
+    // Galaxy spiral formula with some randomness
+    const angle = (i / numRecords) * Math.PI * 4; // 2 full rotations
+    const spread = 0.3 + Math.random() * 0.2;
+    const r = radius * (0.2 + (i / numRecords) * 0.8) * spread;
+
+    // Add vertical variation for 3D effect
+    const verticalOffset = (Math.random() - 0.5) * 3;
+
+    positions.push(new THREE.Vector3(
+      Math.cos(angle) * r + (Math.random() - 0.5) * 1.5,
+      verticalOffset,
+      Math.sin(angle) * r + (Math.random() - 0.5) * 1.5
+    ));
+  }
+
+  return positions;
 }
 
-// Node Component
-function GraphNode({
+// Galaxy Node - glowing core with orbiting particles
+function GalaxyNode({
   record,
   position,
   isSelected,
@@ -48,17 +58,56 @@ function GraphNode({
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const coreRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
-  const size = 0.3 + Math.min((record.content?.length || 0) / 300, 0.5);
-  const nodeColor = record.author === 'him' ? '#4a90d9' : '#e91e63';
+  const baseSize = 0.25 + (record.content?.length || 0) / 400;
+  const size = hovered || isSelected ? baseSize * 1.5 : baseSize;
+
+  // Color based on author - warm colors for love theme
+  const authorColor = record.author === 'him'
+    ? { core: '#4a90d9', glow: '#87ceeb', halo: '#4169e1' }
+    : { core: '#ff69b4', glow: '#ffb6c1', halo: '#ff1493' };
+
+  // Gentle rotation animation
+  useFrame((state) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y += 0.005;
+      groupRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.1;
+    }
+    if (coreRef.current) {
+      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.1;
+      coreRef.current.scale.setScalar(size * pulse);
+    }
+  });
 
   return (
-    <group position={position}>
+    <group ref={groupRef} position={position}>
+      {/* Outer glow/halo */}
+      <Sphere args={[size * 2, 16, 16]}>
+        <meshBasicMaterial
+          color={authorColor.glow}
+          transparent
+          opacity={hovered || isSelected ? 0.15 : 0.05}
+          side={THREE.BackSide}
+        />
+      </Sphere>
+
+      {/* Middle halo */}
+      <Sphere args={[size * 1.5, 16, 16]}>
+        <meshBasicMaterial
+          color={authorColor.halo}
+          transparent
+          opacity={hovered || isSelected ? 0.2 : 0.08}
+          side={THREE.BackSide}
+        />
+      </Sphere>
+
+      {/* Core sphere */}
       <Sphere
-        ref={meshRef}
-        args={[hovered || isSelected ? size * 1.3 : size, 24, 24]}
+        ref={coreRef}
+        args={[size, 32, 32]}
         onClick={(e) => {
           e.stopPropagation();
           onClick();
@@ -75,24 +124,38 @@ function GraphNode({
         }}
       >
         <meshStandardMaterial
-          color={nodeColor}
-          emissive={nodeColor}
-          emissiveIntensity={hovered || isSelected ? 0.5 : 0.2}
+          color={authorColor.core}
+          emissive={authorColor.core}
+          emissiveIntensity={hovered || isSelected ? 1.5 : 0.8}
           transparent
-          opacity={1}
-          roughness={0.4}
-          metalness={0.3}
+          opacity={0.9}
+          roughness={0.2}
+          metalness={0.5}
         />
       </Sphere>
 
+      {/* Orbiting particles ring */}
+      {hovered || isSelected && (
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[size * 1.8, size * 2, 32]} />
+          <meshBasicMaterial
+            color={authorColor.glow}
+            transparent
+            opacity={0.3}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {/* Hover tooltip */}
       {hovered && record.tags && record.tags.length > 0 && (
-        <Html position={[0, size + 0.4, 0]} center>
-          <div className="bg-black/90 text-white px-2 py-1 rounded-lg text-xs whitespace-nowrap pointer-events-none">
-            <div className="text-pink-300 font-medium">
+        <Html position={[0, size + 0.8, 0]} center>
+          <div className="bg-black/90 text-white px-3 py-2 rounded-lg text-xs whitespace-nowrap pointer-events-none">
+            <div className="text-pink-300 font-medium mb-1">
               {new Date(record.created_at).toLocaleDateString('zh-CN')}
             </div>
-            <div className="flex gap-1 mt-1">
-              {record.tags.slice(0, 2).map((tag, i) => (
+            <div className="flex flex-wrap gap-1">
+              {record.tags.slice(0, 3).map((tag, i) => (
                 <span key={i} className="text-purple-300">#{tag}</span>
               ))}
             </div>
@@ -103,8 +166,8 @@ function GraphNode({
   );
 }
 
-// Connection Line
-function ConnectionLine({
+// Glowing connection line
+function GalaxyConnection({
   start,
   end,
   isHighlighted
@@ -115,42 +178,78 @@ function ConnectionLine({
 }) {
   const points = useMemo(() => [start, end], [start, end]);
 
+  // Calculate midpoint for curve
+  const midPoint = useMemo(() => {
+    return new THREE.Vector3(
+      (start.x + end.x) / 2,
+      (start.y + end.y) / 2 + 0.5,
+      (start.z + end.z) / 2
+    );
+  }, [start, end]);
+
   return (
     <Line
-      points={points}
+      points={[start, end]}
       color={isHighlighted ? '#ff69b4' : '#9c27b0'}
       lineWidth={isHighlighted ? 1.5 : 0.3}
       transparent
-      opacity={isHighlighted ? 0.7 : 0.2}
+      opacity={isHighlighted ? 0.6 : 0.15}
     />
   );
 }
 
-// Star Field Background
-function StarField() {
-  const count = 1500;
-  const positions = useMemo(() => {
+// Beautiful star field background
+function GalaxyStarField() {
+  const count = 2000;
+  const [positions, colors] = useMemo(() => {
     const pos = new Float32Array(count * 3);
+    const col = new Float32Array(count * 3);
+
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 50;
-      pos[i * 3 + 1] = (Math.random() - 0.5) * 50;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 50;
+      // Distribute in a large sphere
+      const radius = 20 + Math.random() * 30;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+
+      pos[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+      pos[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+      pos[i * 3 + 2] = radius * Math.cos(phi);
+
+      // Warm colors for galaxy feel
+      const colorChoice = Math.random();
+      if (colorChoice < 0.3) {
+        // Pink
+        col[i * 3] = 1; col[i * 3 + 1] = 0.4; col[i * 3 + 2] = 0.7;
+      } else if (colorChoice < 0.6) {
+        // Blue
+        col[i * 3] = 0.4; col[i * 3 + 1] = 0.6; col[i * 3 + 2] = 1;
+      } else {
+        // White/warm
+        col[i * 3] = 1; col[i * 3 + 1] = 0.9; col[i * 3 + 2] = 0.8;
+      }
     }
-    return pos;
+    return [pos, col];
   }, []);
 
   return (
     <points>
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
+        <bufferAttribute attach="attributes-color" count={count} array={colors} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial size={0.04} color="#ffffff" transparent opacity={0.5} sizeAttenuation />
+      <pointsMaterial
+        size={0.15}
+        vertexColors
+        transparent
+        opacity={0.8}
+        sizeAttenuation
+      />
     </points>
   );
 }
 
 // Main 3D Scene
-function Scene({
+function GalaxyScene({
   records,
   positions,
   selectedId,
@@ -161,37 +260,54 @@ function Scene({
   selectedId: number | null;
   onNodeClick: (record: GraphRecord) => void;
 }) {
+  // Calculate connections based on shared tags
   const connections = useMemo(() => {
-    const conns: { start: THREE.Vector3; end: THREE.Vector3 }[] = [];
+    const conns: { start: THREE.Vector3; end: THREE.Vector3; isHighlighted: boolean }[] = [];
+
     for (let i = 0; i < records.length; i++) {
       for (let j = i + 1; j < records.length; j++) {
         const tags1 = records[i].tags || [];
         const tags2 = records[j].tags || [];
-        if (tags1.some(t => tags2.includes(t))) {
-          conns.push({ start: positions[i], end: positions[j] });
+        const common = tags1.filter(t => tags2.includes(t));
+
+        if (common.length > 0) {
+          const isHighlighted = selectedId !== null &&
+            (records[i].id === selectedId || records[j].id === selectedId);
+          conns.push({
+            start: positions[i],
+            end: positions[j],
+            isHighlighted
+          });
         }
       }
     }
     return conns;
-  }, [records, positions]);
+  }, [records, positions, selectedId]);
 
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} intensity={0.8} />
-      <pointLight position={[-10, -10, -10]} intensity={0.4} color="#ff69b4" />
+      {/* Ambient lighting for soft glow */}
+      <ambientLight intensity={0.3} />
+      <pointLight position={[0, 0, 0]} intensity={1} color="#ff69b4" />
+      <pointLight position={[15, 15, 15]} intensity={0.5} color="#4169e1" />
+      <pointLight position={[-15, -10, -15]} intensity={0.3} color="#ff1493" />
 
-      <StarField />
+      {/* Background */}
+      <GalaxyStarField />
 
-      {connections.map((conn, i) => {
-        const isHighlighted = selectedId !== null &&
-          (records.some(r => r.id === selectedId && r.tags?.some(t => records.find(p => positions.indexOf(conn.start) >= 0)?.tags?.includes(t))) ||
-           records.some(r => r.id === selectedId && r.tags?.some(t => records.find(p => positions.indexOf(conn.end) >= 0)?.tags?.includes(t))));
-        return <ConnectionLine key={i} start={conn.start} end={conn.end} isHighlighted={isHighlighted} />;
-      })}
+      {/* Connections */}
+      {connections.map((conn, i) => (
+        <GalaxyConnection
+          key={i}
+          start={conn.start}
+          end={conn.end}
+          isHighlighted={conn.isHighlighted}
+        />
+      ))}
 
+      {/* Galaxy nodes */}
       {records.map((record, index) => (
-        <GraphNode
+        <GalaxyNode
           key={record.id}
           record={record}
           position={positions[index]}
@@ -200,7 +316,15 @@ function Scene({
         />
       ))}
 
-      <OrbitControls enableDamping dampingFactor={0.05} minDistance={4} maxDistance={20} />
+      {/* Camera controls */}
+      <OrbitControls
+        enableDamping
+        dampingFactor={0.03}
+        minDistance={3}
+        maxDistance={25}
+        autoRotate={true}
+        autoRotateSpeed={0.3}
+      />
     </>
   );
 }
@@ -215,25 +339,31 @@ export default function Diary3DGraph({
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
 
-  const positions = useMemo(() => calculatePositions(records), [records]);
+  // Calculate galaxy positions
+  const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
 
+  // Get all unique tags
   const allTags = useMemo(() => {
     const tagSet = new Set<string>();
     records.forEach(r => r.tags?.forEach(t => tagSet.add(t)));
     return Array.from(tagSet).sort();
   }, [records]);
 
+  // Filter records
   const filteredRecords = useMemo(() => {
     let filtered = records;
+
     if (timeFilter !== 'all') {
       const days = timeFilter === '7d' ? 7 : 30;
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
       filtered = filtered.filter(r => new Date(r.created_at) >= cutoff);
     }
+
     if (selectedTag) {
       filtered = filtered.filter(r => r.tags?.includes(selectedTag));
     }
+
     return filtered;
   }, [records, timeFilter, selectedTag]);
 
@@ -250,7 +380,9 @@ export default function Diary3DGraph({
   const selectedRecord = selectedId ? records.find(r => r.id === selectedId) : null;
 
   return (
-    <div className="w-full h-screen relative" style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)' }}>
+    <div className="w-full h-screen relative" style={{
+      background: 'radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f23 50%, #050510 100%)'
+    }}>
       {/* Controls */}
       <div className="absolute top-4 left-4 z-10 space-y-3">
         <div className="bg-black/70 backdrop-blur-md rounded-xl p-3">
@@ -279,7 +411,7 @@ export default function Diary3DGraph({
 
         <button onClick={() => { setSelectedId(null); setSelectedTag(null); setTimeFilter('all'); }}
           className="w-full px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-sm">
-          重置
+          重置视图
         </button>
       </div>
 
@@ -289,14 +421,14 @@ export default function Diary3DGraph({
         <span className="text-purple-400 ml-2">{allTags.length}</span> 个标签
       </div>
 
-      {/* Help */}
-      <div className="absolute bottom-4 right-4 z-10 bg-black/70 backdrop-blur-md rounded-xl p-3 text-gray-400 text-xs">
-        拖拽旋转 | 滚轮缩放 | 点击查看
-      </div>
-
       {/* 3D Canvas */}
-      <Canvas camera={{ position: [0, 0, 12], fov: 60 }} gl={{ antialias: true }}>
-        <Scene records={filteredRecords} positions={positions} selectedId={selectedId} onNodeClick={handleNodeClick} />
+      <Canvas camera={{ position: [0, 5, 15], fov: 60 }} gl={{ antialias: true }}>
+        <GalaxyScene
+          records={filteredRecords}
+          positions={positions}
+          selectedId={selectedId}
+          onNodeClick={handleNodeClick}
+        />
       </Canvas>
 
       {/* Detail Modal */}
@@ -307,13 +439,25 @@ export default function Diary3DGraph({
               <div>
                 <div className="text-pink-400 text-sm">{new Date(selectedRecord.created_at).toLocaleString('zh-CN')}</div>
                 <span className={`px-2 py-1 rounded-full text-xs text-white mt-1 inline-block ${selectedRecord.author === 'him' ? 'bg-blue-500' : 'bg-rose-500'}`}>
-                  {selectedRecord.author === 'him' ? '他' : '她'}
+                  {selectedRecord.author === 'him' ? '👦 他' : '👧 她'}
                 </span>
               </div>
               <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
-            {selectedRecord.image_url && <img src={selectedRecord.image_url} alt="" className="w-full h-24 object-cover rounded-lg mb-3" />}
+
+            {/* Record images */}
+            {(selectedRecord.image_urls || selectedRecord.image_url) && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {selectedRecord.image_urls?.map((url, idx) => (
+                  <img key={idx} src={url} alt="" className="w-full max-h-32 object-cover rounded-lg" />
+                )) || (selectedRecord.image_url && (
+                  <img src={selectedRecord.image_url} alt="" className="w-full max-h-32 object-cover rounded-lg" />
+                ))}
+              </div>
+            )}
+
             <p className="text-white text-sm mb-3">{selectedRecord.content}</p>
+
             {selectedRecord.tags && selectedRecord.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {selectedRecord.tags.map((tag, i) => (

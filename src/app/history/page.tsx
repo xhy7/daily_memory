@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 type TypeMap = { [key: string]: { label: string; emoji: string } };
@@ -32,9 +32,9 @@ export default function HistoryPage() {
   const [dayRecords, setDayRecords] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [allRecords, setAllRecords] = useState<DayItem[]>([]);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   useEffect(() => {
-    // Use shared couple device ID
     let storedDeviceId = localStorage.getItem('coupleDeviceId');
     if (!storedDeviceId) {
       storedDeviceId = 'couple_memory_001';
@@ -49,7 +49,6 @@ export default function HistoryPage() {
     }
   }, [deviceId]);
 
-  // Load today's records by default
   useEffect(() => {
     if (deviceId && allRecords.length > 0 && !selectedDate) {
       const today = new Date().toISOString().split('T')[0];
@@ -126,12 +125,6 @@ export default function HistoryPage() {
     return allRecords.some(dr => dr.date === dateStr);
   };
 
-  const getRecordCount = (day: number) => {
-    const dateStr = formatDate(day);
-    const dayRecord = allRecords.find(dr => dr.date === dateStr);
-    return dayRecord ? dayRecord.records.length : 0;
-  };
-
   const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
   const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
   const days = getDaysInMonth(currentDate);
@@ -181,6 +174,17 @@ export default function HistoryPage() {
 
   const nextMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+  };
+
+  // Get all images from a record for lightbox
+  const getRecordImages = (record: MemoryItem) => {
+    if (record.image_urls && record.image_urls.length > 0) {
+      return record.image_urls;
+    }
+    if (record.image_url) {
+      return [record.image_url];
+    }
+    return [];
   };
 
   return (
@@ -270,16 +274,25 @@ export default function HistoryPage() {
                     </span>
                   </div>
 
-                  {/* Support both single image and multiple images */}
-                  {(record.image_url || record.image_urls) && (
+                  {/* Images with click to view */}
+                  {getRecordImages(record).length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {record.image_urls ? (
-                        record.image_urls.map((url, idx) => (
-                          <img key={idx} src={url} alt={`记录图片${idx + 1}`} className="w-full max-h-48 object-cover rounded-lg" />
-                        ))
-                      ) : (
-                        <img src={record.image_url} alt="记录图片" className="w-full max-h-48 object-cover rounded-lg" />
-                      )}
+                      {getRecordImages(record).map((url, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedImage(url)}
+                          className="relative group"
+                        >
+                          <img
+                            src={url}
+                            alt={`记录图片${idx + 1}`}
+                            className="w-full max-h-48 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   )}
 
@@ -314,6 +327,26 @@ export default function HistoryPage() {
         <div className="text-center py-8">
           <p className="text-pink-300 text-lg mb-2">💕</p>
           <p className="text-pink-300">点击日历上的日期查看甜蜜回忆</p>
+        </div>
+      )}
+
+      {/* Image Lightbox Modal */}
+      {selectedImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setSelectedImage(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition"
+            onClick={() => setSelectedImage(null)}
+          >
+            ✕
+          </button>
+          <img
+            src={selectedImage}
+            alt="查看大图"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+          />
         </div>
       )}
     </div>
