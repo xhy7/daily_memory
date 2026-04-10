@@ -304,8 +304,6 @@ export default function Diary3DGraph({
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [playingTTS, setPlayingTTS] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // 预计算位置
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
@@ -352,43 +350,6 @@ export default function Diary3DGraph({
   }, [onTagClick]);
 
   const selectedRecord = selectedId ? records.find(r => r.id === selectedId) : null;
-
-  // TTS 朗读
-  const playTTS = useCallback(async (text: string, author?: string) => {
-    if (playingTTS) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      setPlayingTTS(false);
-      return;
-    }
-
-    setPlayingTTS(true);
-    try {
-      const voiceType = (author === 'him') ? 'his' : 'her';
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceType })
-      });
-      const data = await res.json();
-
-      if (data.audio) {
-        const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
-        audioRef.current = audio;
-        audio.onended = () => setPlayingTTS(false);
-        audio.onerror = () => setPlayingTTS(false);
-        await audio.play();
-      } else {
-        console.error('TTS failed:', data.error);
-        setPlayingTTS(false);
-      }
-    } catch (error) {
-      console.error('TTS error:', error);
-      setPlayingTTS(false);
-    }
-  }, [playingTTS]);
 
   return (
     <div className="w-full h-screen relative" style={{
@@ -477,16 +438,6 @@ export default function Diary3DGraph({
             )}
 
             <p className="text-white text-sm mb-3">{selectedRecord.content}</p>
-
-            <div className="flex items-center gap-2 mb-3">
-              <button
-                onClick={() => playTTS(selectedRecord.content, selectedRecord.author)}
-                disabled={playingTTS}
-                className="px-3 py-1.5 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-full text-xs flex items-center gap-1 hover:from-pink-600 hover:to-rose-600 disabled:opacity-50"
-              >
-                {playingTTS ? '🔊 播放中...' : '🔊 播放'}
-              </button>
-            </div>
 
             {selectedRecord.tags && selectedRecord.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">

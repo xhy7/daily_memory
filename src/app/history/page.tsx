@@ -33,48 +33,6 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [allRecords, setAllRecords] = useState<DayItem[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [playingTTSId, setPlayingTTSId] = useState<number | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // TTS 朗读功能 - 使用克隆的声音
-  const playRecordTTS = async (recordId: number, text: string, author?: string) => {
-    if (playingTTSId) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      setPlayingTTSId(null);
-      return;
-    }
-
-    setPlayingTTSId(recordId);
-    try {
-      // 根据作者选择声音类型，默认用她的声音
-      const voiceType = (author === 'him') ? 'his' : 'her';
-
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceType })
-      });
-      const data = await res.json();
-
-      if (data.audio) {
-        const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
-        audioRef.current = audio;
-        audio.onended = () => setPlayingTTSId(null);
-        audio.onerror = () => setPlayingTTSId(null);
-        await audio.play();
-      } else {
-        // 声音未克隆，提示用户
-        alert(data.error || '请先在声音克隆页面配置声音');
-        setPlayingTTSId(null);
-      }
-    } catch (error) {
-      console.error('TTS error:', error);
-      setPlayingTTSId(null);
-    }
-  };
 
   useEffect(() => {
     let storedDeviceId = localStorage.getItem('coupleDeviceId');
@@ -341,15 +299,6 @@ export default function HistoryPage() {
                   )}
 
                   <p className="mb-2 text-gray-700">{record.content}</p>
-
-                  {/* TTS Button */}
-                  <button
-                    onClick={() => playRecordTTS(record.id, record.content, record.author)}
-                    disabled={playingTTSId !== null}
-                    className="mt-2 mr-2 text-sm text-pink-500 hover:text-pink-700 disabled:opacity-50"
-                  >
-                    {playingTTSId === record.id ? '🔊 播放中...' : '🔊 播放'}
-                  </button>
 
                   {record.polished_content && (
                     <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-purple-700">
