@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     const textContent = content?.trim() || '';
 
     // 使用 MiniMax API
+    const model = 'MiniMax-M2.7';
     const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
       method: 'POST',
       headers: {
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'abab6.5s-chat',
+        model: model,
         messages: [
           {
             role: 'user',

@@ -20,7 +20,7 @@ export async function GET() {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'abab6.5s-chat',
+        model: 'MiniMax-M2.7',
         messages: [
           {
             role: 'user',
