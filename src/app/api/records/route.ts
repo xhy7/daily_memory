@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         const filtered: Record<string, unknown> = {};
         fieldList.forEach(field => {
           if (field in record) {
-            filtered[field] = (record as Record<string, unknown>)[field];
+            filtered[field] = (record as unknown as Record<string, unknown>)[field];
           }
         });
         return filtered as typeof record;
