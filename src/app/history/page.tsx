@@ -348,7 +348,7 @@ export default function HistoryPage() {
                     disabled={playingTTSId !== null}
                     className="mt-2 mr-2 text-sm text-pink-500 hover:text-pink-700 disabled:opacity-50"
                   >
-                    {playingTTSId === record.id ? '🔊 播放中...' : '🔊 朗读'}
+                    {playingTTSId === record.id ? '🔊 播放中...' : '🔊 播放'}
                   </button>
 
                   {record.polished_content && (

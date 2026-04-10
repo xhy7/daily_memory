@@ -484,7 +484,7 @@ export default function Diary3DGraph({
                 disabled={playingTTS}
                 className="px-3 py-1.5 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-full text-xs flex items-center gap-1 hover:from-pink-600 hover:to-rose-600 disabled:opacity-50"
               >
-                {playingTTS ? '🔊 播放中...' : '🔊 朗读'}
+                {playingTTS ? '🔊 播放中...' : '🔊 播放'}
               </button>
             </div>
 
