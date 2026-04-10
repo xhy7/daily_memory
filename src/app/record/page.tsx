@@ -35,6 +35,13 @@ export default function RecordPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Edit mode state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editImages, setEditImages] = useState<string[]>([]);
+  const [editImageInputRef, setEditImageInputRef] = useState<React.RefObject<HTMLInputElement> | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   useEffect(() => {
     // Use a shared couple device ID
     let storedDeviceId = localStorage.getItem('coupleDeviceId');
@@ -338,6 +345,112 @@ export default function RecordPage() {
     return authorLabels[author] || '她';
   };
 
+  // Edit record functions
+  const handleStartEdit = (record: MemoryItem) => {
+    setEditingId(record.id);
+    setEditContent(record.content);
+    // Get images from record - support both old and new format
+    const existingImages = record.image_urls && record.image_urls.length > 0
+      ? record.image_urls
+      : (record.image_url ? [record.image_url] : []);
+    setEditImages(existingImages);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditContent('');
+    setEditImages([]);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId || !editContent.trim()) return;
+
+    setSavingEdit(true);
+    try {
+      const res = await fetch('/api/records', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingId,
+          content: editContent.trim(),
+          imageUrls: editImages
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert('保存失败: ' + (errorData.error || '未知错误'));
+        setSavingEdit(false);
+        return;
+      }
+
+      const updatedRecord = await res.json();
+      setTodayRecords(todayRecords.map(r =>
+        r.id === editingId ? { ...r, content: updatedRecord.content, image_urls: updatedRecord.image_urls } : r
+      ));
+      setEditingId(null);
+      setEditContent('');
+      setEditImages([]);
+    } catch (error) {
+      console.error('Failed to update record:', error);
+      alert('保存失败，请稍后重试');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteRecord = async (recordId: number) => {
+    if (!confirm('确定要删除这条记录吗？')) return;
+
+    try {
+      const res = await fetch(`/api/records?id=${recordId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert('删除失败: ' + (errorData.error || '未知错误'));
+        return;
+      }
+
+      setTodayRecords(todayRecords.filter(r => r.id !== recordId));
+    } catch (error) {
+      console.error('Failed to delete record:', error);
+      alert('删除失败，请稍后重试');
+    }
+  };
+
+  const handleEditImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    let loadedCount = 0;
+    const newImages: string[] = [];
+
+    Array.from(files).forEach((file) => {
+      if (file.size > 4.5 * 1024 * 1024) {
+        alert(`图片 ${file.name} 超过4.5MB，将被跳过`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        newImages.push(reader.result as string);
+        loadedCount++;
+        if (loadedCount === files.length) {
+          setEditImages(prev => [...prev, ...newImages].slice(0, 9));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Reset input
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveEditImage = (index: number) => {
+    setEditImages(prev => prev.filter((_, i) => i !== index));
+  };
+
   return (
     <div className="min-h-screen p-4 max-w-2xl mx-auto pb-20">
       <header className="flex justify-between items-center mb-6">
@@ -470,6 +583,73 @@ export default function RecordPage() {
               key={record.id}
               className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${getTypeColor(record.type)} shadow-sm`}
             >
+              {editingId === record.id ? (
+                // Edit mode
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-medium text-gray-500">编辑模式</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleCancelEdit}
+                        className="px-3 py-1 text-sm bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleSaveEdit}
+                        disabled={savingEdit || !editContent.trim()}
+                        className="px-3 py-1 text-sm bg-pink-400 text-white rounded-lg hover:bg-pink-500 disabled:opacity-50"
+                      >
+                        {savingEdit ? '保存中...' : '保存'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Edit image upload */}
+                  <div className="mb-3">
+                    <input
+                      type="file"
+                      id={`edit-image-${record.id}`}
+                      onChange={handleEditImageUpload}
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById(`edit-image-${record.id}`)?.click()}
+                      className="py-1 px-3 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition text-sm flex items-center gap-1"
+                    >
+                      📷 添加图片
+                    </button>
+                    {editImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {editImages.map((url, idx) => (
+                          <div key={idx} className="relative">
+                            <img src={url} alt={`预览${idx + 1}`} className="w-16 h-16 object-cover rounded-lg" />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEditImage(idx)}
+                              className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full p-3 border border-pink-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-300 bg-white"
+                    rows={4}
+                  />
+                </div>
+              ) : (
+                // Normal display mode
+                <>
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-1 rounded-full text-xs text-white ${getAuthorColor(record.author || 'her')}`}>
@@ -479,9 +659,23 @@ export default function RecordPage() {
                     {getTypeInfo(record.type).emoji} {getTypeInfo(record.type).label}
                   </span>
                 </div>
-                <span className="text-xs text-gray-400">
-                  {new Date(record.created_at).toLocaleTimeString()}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">
+                    {new Date(record.created_at).toLocaleTimeString()}
+                  </span>
+                  <button
+                    onClick={() => handleStartEdit(record)}
+                    className="text-xs text-blue-400 hover:text-blue-600"
+                  >
+                    ✏️ 编辑
+                  </button>
+                  <button
+                    onClick={() => handleDeleteRecord(record.id)}
+                    className="text-xs text-red-400 hover:text-red-600"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
 
               {/* Support both single image and multiple images with click to view */}
@@ -545,6 +739,8 @@ export default function RecordPage() {
               >
                 {record.tags && record.tags.length > 0 ? '✨ 重新分析' : '✨ 智能标签'}
               </button>
+                </>
+              )}
             </div>
           ))
         )}

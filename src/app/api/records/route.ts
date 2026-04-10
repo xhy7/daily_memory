@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, deleteMemoryRecord, initializeDatabase } from '@/lib/db';
+import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, deleteMemoryRecord, updateMemoryRecord, initializeDatabase } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -118,19 +118,24 @@ export async function PATCH(request: NextRequest) {
     await ensureDatabase();
 
     const body = await request.json();
-    const { id, polishedContent, tags } = body;
+    const { id, polishedContent, tags, content, imageUrls } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 });
     }
 
     let record;
-    if (tags !== undefined) {
+    if (content !== undefined || imageUrls !== undefined) {
+      // Full record update (content and/or images)
+      const newContent = content ?? '';
+      const newImageUrls = imageUrls ?? [];
+      record = await updateMemoryRecord(id, newContent, newImageUrls);
+    } else if (tags !== undefined) {
       record = await updateMemoryRecordTags(id, tags);
     } else if (polishedContent) {
       record = await updateMemoryRecordPolishedContent(id, polishedContent);
     } else {
-      return NextResponse.json({ error: 'polishedContent or tags is required' }, { status: 400 });
+      return NextResponse.json({ error: 'polishedContent, tags, or content is required' }, { status: 400 });
     }
 
     return NextResponse.json(record);

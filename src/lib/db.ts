@@ -228,6 +228,39 @@ export async function deleteMemoryRecord(id: number): Promise<void> {
   await sql`DELETE FROM records WHERE id = ${id}`;
 }
 
+// 更新记录内容（包括图片）
+export async function updateMemoryRecord(
+  id: number,
+  content: string,
+  imageUrls?: string[]
+): Promise<MemoryRecord> {
+  const imageUrl = Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls[0] : null;
+  const imageUrlsJson = Array.isArray(imageUrls) && imageUrls.length > 0
+    ? JSON.stringify(imageUrls)
+    : '[]';
+
+  const result = await sql`
+    UPDATE records
+    SET content = ${content},
+        image_url = ${imageUrl},
+        image_urls = ${imageUrlsJson},
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ${id}
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
+  `;
+  const row = result.rows[0];
+  const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
+  const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
+    ? imageUrlsParsed
+    : (row.image_url ? [row.image_url] : []);
+
+  return {
+    ...row,
+    image_urls: finalImageUrls,
+    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+  } as unknown as MemoryRecord;
+}
+
 // 保存或更新克隆的声音
 export async function saveClonedVoice(
   deviceId: string,
