@@ -101,19 +101,21 @@ async function initializeVoices() {
       console.log(`[${voice.type}] Uploading ${fileName}...`);
 
       // 1. 上传音频文件获取 file_id
-      const uploadUrl = 'https://api.minimax.com/v1/files/upload';
+      const uploadUrl = 'https://api.minimax.chat/v1/files/upload';
+      console.log(`[${voice.type}] Creating FormData...`);
       const uploadFormData = new FormData();
+      console.log(`[${voice.type}] FormData created, appending file...`);
       uploadFormData.append('purpose', 'voice_clone');
       uploadFormData.append('file', new Blob([fileBuffer]), fileName);
+      console.log(`[${voice.type}] File appended to FormData`);
 
       console.log(`[${voice.type}] Uploading to ${uploadUrl}...`);
 
       let uploadResponse;
       try {
-        console.log(`[${voice.type}] API Key prefix:`, apiKey.substring(0, 20));
+        console.log(`[${voice.type}] API Key prefix:`, apiKey ? apiKey.substring(0, 20) : 'undefined');
         console.log(`[${voice.type}] Attempting fetch to: ${uploadUrl}`);
 
-        // 使用 agent 选项尝试解决 SSL 问题
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -178,7 +180,7 @@ async function initializeVoices() {
 
       console.log(`[${voice.type}] Calling clone API with voice_id: ${voiceId}...`);
 
-      const cloneUrl = 'https://api.minimax.com/v1/voice_clone';
+      const cloneUrl = 'https://api.minimax.chat/v1/voice_clone';
       console.log(`[${voice.type}] Clone URL: ${cloneUrl}`);
 
       let cloneResponse;
@@ -327,7 +329,7 @@ export async function POST(request: NextRequest) {
     // 调用 TTS API
     let response;
     try {
-      response = await fetch('https://api.minimax.com/v1/t2a_v2', {
+      response = await fetch('https://api.minimax.chat/v1/t2a_v2', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
