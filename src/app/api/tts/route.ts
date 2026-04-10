@@ -251,18 +251,24 @@ async function initializeVoices() {
         const statusCode = cloneData.status_code;
         const msg = cloneData.message || cloneData.msg;
 
+        console.log(`[${voice.type}] Full clone response:`, JSON.stringify(cloneData));
         console.log(`[${voice.type}] Error check - base_resp:`, baseResp);
         console.log(`[${voice.type}] Error check - error:`, errorObj);
         console.log(`[${voice.type}] Error check - code:`, directCode);
         console.log(`[${voice.type}] Error check - status_code:`, statusCode);
         console.log(`[${voice.type}] Error check - message:`, msg);
 
-        // 检查各种可能的错误
-        const errorCode = baseResp?.status_code || errorObj?.code || directCode || statusCode;
-        if (errorCode === 1008 || errorCode === 'insufficient_balance') {
+        // 检查各种可能的错误 - 转换为字符串比较
+        const errorCodeStr = String(baseResp?.status_code || errorObj?.code || directCode || statusCode || '');
+        console.log(`[${voice.type}] Error code string:`, errorCodeStr);
+
+        if (errorCodeStr === '1008' || errorCodeStr === 'insufficient_balance') {
           console.error(`[${voice.type}] Insufficient balance! Voice clone failed.`);
-        } else {
+        } else if (msg || errorObj || directCode) {
           console.error(`[${voice.type}] Clone failed with response:`, cloneData);
+        } else {
+          // 没有错误信息但也没有返回 voice_id，可能是克隆成功但格式不同
+          console.log(`[${voice.type}] No explicit error, checking if clone succeeded...`);
         }
       }
 
