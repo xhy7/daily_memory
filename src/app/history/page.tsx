@@ -101,7 +101,8 @@ export default function HistoryPage() {
 
   const fetchAllRecords = async () => {
     try {
-      const res = await fetch(`/api/records?deviceId=${deviceId}`);
+      // 优化：只请求需要的字段，不获取图片
+      const res = await fetch(`/api/records?deviceId=${deviceId}&fields=id,type,content,polished_content,tags,author,created_at`);
       const data = await res.json();
 
       const grouped: { [key: string]: MemoryItem[] } = {};
@@ -128,7 +129,8 @@ export default function HistoryPage() {
 
   const fetchDayRecords = async (date: string) => {
     try {
-      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${date}`);
+      // 优化：只请求需要的字段
+      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${date}&fields=id,type,content,polished_content,image_urls,tags,author,created_at`);
       const data = await res.json();
       setDayRecords(data.records || []);
       setSelectedDate(date);

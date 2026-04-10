@@ -62,7 +62,8 @@ export default function RecordPage() {
   const fetchTodayRecords = async () => {
     const today = new Date().toISOString().split('T')[0];
     try {
-      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}`);
+      // 优化：只请求需要的字段
+      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}&fields=id,type,content,image_urls,tags,author,created_at`);
       const data = await res.json();
       console.log('Fetched records:', data);
       setTodayRecords(data.records || []);

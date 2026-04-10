@@ -22,31 +22,41 @@ interface Diary3DGraphProps {
   onTagClick?: (tag: string) => void;
 }
 
-// Generate beautiful galaxy-like spiral positions
+// 预计算位置 - 使用稳定的随机种子
 function calculateGalaxyPositions(records: GraphRecord[], radius: number = 10) {
   const positions: THREE.Vector3[] = [];
   const numRecords = records.length;
 
-  for (let i = 0; i < numRecords; i++) {
-    // Galaxy spiral formula with some randomness
-    const angle = (i / numRecords) * Math.PI * 4; // 2 full rotations
-    const spread = 0.3 + Math.random() * 0.2;
-    const r = radius * (0.2 + (i / numRecords) * 0.8) * spread;
+  // 使用记录ID作为种子，确保每次渲染位置一致
+  const seededRandom = (seed: number) => {
+    const x = Math.sin(seed * 9999) * 10000;
+    return x - Math.floor(x);
+  };
 
-    // Add vertical variation for 3D effect
-    const verticalOffset = (Math.random() - 0.5) * 3;
+  for (let i = 0; i < numRecords; i++) {
+    const seed = records[i].id || i;
+    const angle = (i / numRecords) * Math.PI * 4;
+    const spread = 0.3 + seededRandom(seed + 1) * 0.2;
+    const r = radius * (0.2 + (i / numRecords) * 0.8) * spread;
+    const verticalOffset = (seededRandom(seed + 2) - 0.5) * 3;
 
     positions.push(new THREE.Vector3(
-      Math.cos(angle) * r + (Math.random() - 0.5) * 1.5,
+      Math.cos(angle) * r + (seededRandom(seed + 3) - 0.5) * 1.5,
       verticalOffset,
-      Math.sin(angle) * r + (Math.random() - 0.5) * 1.5
+      Math.sin(angle) * r + (seededRandom(seed + 4) - 0.5) * 1.5
     ));
   }
 
   return positions;
 }
 
-// Galaxy Node - glowing core with orbiting particles
+// 预计算颜色 - 避免每次渲染重新计算
+const AUTHOR_COLORS = {
+  him: { core: '#4a90d9', glow: '#87ceeb', halo: '#4169e1' },
+  her: { core: '#ff69b4', glow: '#ffb6c1', halo: '#ff1493' }
+};
+
+// 优化的Galaxy Node - 减少几何体分段数
 function GalaxyNode({
   record,
   position,
@@ -62,71 +72,48 @@ function GalaxyNode({
   const coreRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
-  const baseSize = 0.25 + (record.content?.length || 0) / 400;
+  const authorColor = record.author === 'him' ? AUTHOR_COLORS.him : AUTHOR_COLORS.her;
+  const baseSize = 0.25 + Math.min((record.content?.length || 0) / 400, 0.5);
   const size = hovered || isSelected ? baseSize * 1.5 : baseSize;
 
-  // Color based on author - warm colors for love theme
-  const authorColor = record.author === 'him'
-    ? { core: '#4a90d9', glow: '#87ceeb', halo: '#4169e1' }
-    : { core: '#ff69b4', glow: '#ffb6c1', halo: '#ff1493' };
+  // 使用useMemo缓存几何体参数，减少重建
+  const sphereArgs = useMemo(() => [size, 16, 16], [size]);
 
-  // Gentle rotation animation
   useFrame((state) => {
     if (groupRef.current) {
-      groupRef.current.rotation.y += 0.005;
-      groupRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.1;
+      groupRef.current.rotation.y += 0.003;
+      groupRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.05;
     }
     if (coreRef.current) {
-      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.1;
+      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.08;
       coreRef.current.scale.setScalar(size * pulse);
     }
   });
 
   return (
     <group ref={groupRef} position={position}>
-      {/* Outer glow/halo */}
-      <Sphere args={[size * 2, 16, 16]}>
+      {/* 简化的halo - 非选中时减少分段数 */}
+      <Sphere args={[size * 2, isSelected ? 16 : 8, isSelected ? 16 : 8]}>
         <meshBasicMaterial
           color={authorColor.glow}
           transparent
-          opacity={hovered || isSelected ? 0.15 : 0.05}
+          opacity={hovered || isSelected ? 0.15 : 0.03}
           side={THREE.BackSide}
         />
       </Sphere>
 
-      {/* Middle halo */}
-      <Sphere args={[size * 1.5, 16, 16]}>
-        <meshBasicMaterial
-          color={authorColor.halo}
-          transparent
-          opacity={hovered || isSelected ? 0.2 : 0.08}
-          side={THREE.BackSide}
-        />
-      </Sphere>
-
-      {/* Core sphere */}
+      {/* 核心球体 - 选中时增加细节 */}
       <Sphere
         ref={coreRef}
-        args={[size, 32, 32]}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick();
-        }}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          setHovered(true);
-          document.body.style.cursor = 'pointer';
-        }}
-        onPointerOut={(e) => {
-          e.stopPropagation();
-          setHovered(false);
-          document.body.style.cursor = 'auto';
-        }}
+        args={[size, isSelected ? 32 : 24, isSelected ? 32 : 24]}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
+        onPointerOut={(e) => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
       >
         <meshStandardMaterial
           color={authorColor.core}
           emissive={authorColor.core}
-          emissiveIntensity={hovered || isSelected ? 1.5 : 0.8}
+          emissiveIntensity={hovered || isSelected ? 1.5 : 0.6}
           transparent
           opacity={0.9}
           roughness={0.2}
@@ -134,29 +121,24 @@ function GalaxyNode({
         />
       </Sphere>
 
-      {/* Orbiting particles ring */}
-      {hovered || isSelected && (
+      {/* 选中时的环 */}
+      {isSelected && (
         <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[size * 1.8, size * 2, 32]} />
-          <meshBasicMaterial
-            color={authorColor.glow}
-            transparent
-            opacity={0.3}
-            side={THREE.DoubleSide}
-          />
+          <ringGeometry args={[size * 1.8, size * 2, 24]} />
+          <meshBasicMaterial color={authorColor.glow} transparent opacity={0.3} side={THREE.DoubleSide} />
         </mesh>
       )}
 
-      {/* Hover tooltip */}
+      {/* 悬停提示 - 简化渲染 */}
       {hovered && record.tags && record.tags.length > 0 && (
-        <Html position={[0, size + 0.8, 0]} center>
-          <div className="bg-black/90 text-white px-3 py-2 rounded-lg text-xs whitespace-nowrap pointer-events-none">
-            <div className="text-pink-300 font-medium mb-1">
+        <Html position={[0, size + 0.6, 0]} center>
+          <div className="bg-black/90 text-white px-2 py-1 rounded-lg text-xs whitespace-nowrap pointer-events-none">
+            <div className="text-pink-300 text-center mb-1">
               {new Date(record.created_at).toLocaleDateString('zh-CN')}
             </div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 justify-center">
               {record.tags.slice(0, 3).map((tag, i) => (
-                <span key={i} className="text-purple-300">#{tag}</span>
+                <span key={i} className="text-purple-300 text-[10px]">#{tag}</span>
               ))}
             </div>
           </div>
@@ -166,7 +148,7 @@ function GalaxyNode({
   );
 }
 
-// Glowing connection line
+// 连接线 - 使用Line组件优化
 function GalaxyConnection({
   start,
   end,
@@ -178,36 +160,26 @@ function GalaxyConnection({
 }) {
   const points = useMemo(() => [start, end], [start, end]);
 
-  // Calculate midpoint for curve
-  const midPoint = useMemo(() => {
-    return new THREE.Vector3(
-      (start.x + end.x) / 2,
-      (start.y + end.y) / 2 + 0.5,
-      (start.z + end.z) / 2
-    );
-  }, [start, end]);
-
   return (
     <Line
-      points={[start, end]}
+      points={points}
       color={isHighlighted ? '#ff69b4' : '#9c27b0'}
-      lineWidth={isHighlighted ? 1.5 : 0.3}
+      lineWidth={isHighlighted ? 1.5 : 0.2}
       transparent
-      opacity={isHighlighted ? 0.6 : 0.15}
+      opacity={isHighlighted ? 0.5 : 0.1}
     />
   );
 }
 
-// Beautiful star field background
+// 优化的星空背景 - 使用useMemo缓存
 function GalaxyStarField() {
-  const count = 2000;
-  const [positions, colors] = useMemo(() => {
+  const starField = useMemo(() => {
+    const count = 1500; // 减少星星数量
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
-      // Distribute in a large sphere
-      const radius = 20 + Math.random() * 30;
+      const radius = 25 + Math.random() * 25;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
 
@@ -215,40 +187,30 @@ function GalaxyStarField() {
       pos[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
       pos[i * 3 + 2] = radius * Math.cos(phi);
 
-      // Warm colors for galaxy feel
       const colorChoice = Math.random();
       if (colorChoice < 0.3) {
-        // Pink
         col[i * 3] = 1; col[i * 3 + 1] = 0.4; col[i * 3 + 2] = 0.7;
       } else if (colorChoice < 0.6) {
-        // Blue
         col[i * 3] = 0.4; col[i * 3 + 1] = 0.6; col[i * 3 + 2] = 1;
       } else {
-        // White/warm
         col[i * 3] = 1; col[i * 3 + 1] = 0.9; col[i * 3 + 2] = 0.8;
       }
     }
-    return [pos, col];
+    return { positions: pos, colors: col, count };
   }, []);
 
   return (
     <points>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
-        <bufferAttribute attach="attributes-color" count={count} array={colors} itemSize={3} />
+        <bufferAttribute attach="attributes-position" count={starField.count} array={starField.positions} itemSize={3} />
+        <bufferAttribute attach="attributes-color" count={starField.count} array={starField.colors} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial
-        size={0.15}
-        vertexColors
-        transparent
-        opacity={0.8}
-        sizeAttenuation
-      />
+      <pointsMaterial size={0.12} vertexColors transparent opacity={0.7} sizeAttenuation />
     </points>
   );
 }
 
-// Main 3D Scene
+// 主3D场景 - 优化连接线计算
 function GalaxyScene({
   records,
   positions,
@@ -260,52 +222,56 @@ function GalaxyScene({
   selectedId: number | null;
   onNodeClick: (record: GraphRecord) => void;
 }) {
-  // Calculate connections based on shared tags
+  // 使用Map优化连接线计算
   const connections = useMemo(() => {
     const conns: { start: THREE.Vector3; end: THREE.Vector3; isHighlighted: boolean }[] = [];
+    const tagToIndices = new Map<string, number[]>();
 
-    for (let i = 0; i < records.length; i++) {
-      for (let j = i + 1; j < records.length; j++) {
-        const tags1 = records[i].tags || [];
-        const tags2 = records[j].tags || [];
-        const common = tags1.filter(t => tags2.includes(t));
+    records.forEach((record, idx) => {
+      (record.tags || []).forEach(tag => {
+        const indices = tagToIndices.get(tag) || [];
+        indices.push(idx);
+        tagToIndices.set(tag, indices);
+      });
+    });
 
-        if (common.length > 0) {
-          const isHighlighted = selectedId !== null &&
-            (records[i].id === selectedId || records[j].id === selectedId);
-          conns.push({
-            start: positions[i],
-            end: positions[j],
-            isHighlighted
-          });
+    const processed = new Set<string>();
+    tagToIndices.forEach((indices) => {
+      for (let i = 0; i < indices.length; i++) {
+        for (let j = i + 1; j < indices.length; j++) {
+          const idx1 = indices[i];
+          const idx2 = indices[j];
+          const key = idx1 < idx2 ? `${idx1}-${idx2}` : `${idx2}-${idx1}`;
+
+          if (!processed.has(key)) {
+            processed.add(key);
+            const isHighlighted = selectedId !== null &&
+              (records[idx1].id === selectedId || records[idx2].id === selectedId);
+            conns.push({
+              start: positions[idx1],
+              end: positions[idx2],
+              isHighlighted
+            });
+          }
         }
       }
-    }
+    });
+
     return conns;
   }, [records, positions, selectedId]);
 
   return (
     <>
-      {/* Ambient lighting for soft glow */}
       <ambientLight intensity={0.3} />
       <pointLight position={[0, 0, 0]} intensity={1} color="#ff69b4" />
       <pointLight position={[15, 15, 15]} intensity={0.5} color="#4169e1" />
-      <pointLight position={[-15, -10, -15]} intensity={0.3} color="#ff1493" />
 
-      {/* Background */}
       <GalaxyStarField />
 
-      {/* Connections */}
       {connections.map((conn, i) => (
-        <GalaxyConnection
-          key={i}
-          start={conn.start}
-          end={conn.end}
-          isHighlighted={conn.isHighlighted}
-        />
+        <GalaxyConnection key={i} start={conn.start} end={conn.end} isHighlighted={conn.isHighlighted} />
       ))}
 
-      {/* Galaxy nodes */}
       {records.map((record, index) => (
         <GalaxyNode
           key={record.id}
@@ -316,7 +282,6 @@ function GalaxyScene({
         />
       ))}
 
-      {/* Camera controls */}
       <OrbitControls
         enableDamping
         dampingFactor={0.03}
@@ -329,7 +294,7 @@ function GalaxyScene({
   );
 }
 
-// Main Component
+// 主组件
 export default function Diary3DGraph({
   records,
   onNodeClick,
@@ -342,7 +307,53 @@ export default function Diary3DGraph({
   const [playingTTS, setPlayingTTS] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // TTS 朗读功能 - 使用克隆的声音
+  // 预计算位置
+  const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
+
+  // 提取所有标签
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    records.forEach(r => r.tags?.forEach(t => tagSet.add(t)));
+    return Array.from(tagSet).sort();
+  }, [records]);
+
+  // 过滤记录
+  const filteredRecords = useMemo(() => {
+    let filtered = records;
+
+    if (timeFilter !== 'all') {
+      const days = timeFilter === '7d' ? 7 : 30;
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      filtered = filtered.filter(r => new Date(r.created_at) >= cutoff);
+    }
+
+    if (selectedTag) {
+      filtered = filtered.filter(r => r.tags?.includes(selectedTag));
+    }
+
+    return filtered;
+  }, [records, timeFilter, selectedTag]);
+
+  // 对应的位置
+  const filteredPositions = useMemo(() => {
+    const ids = new Set(filteredRecords.map(r => r.id));
+    return positions.filter((_, idx) => ids.has(records[idx].id));
+  }, [filteredRecords, records, positions]);
+
+  const handleNodeClick = useCallback((record: GraphRecord) => {
+    setSelectedId(prev => prev === record.id ? null : record.id);
+    onNodeClick?.(record);
+  }, [onNodeClick]);
+
+  const handleTagClick = useCallback((tag: string) => {
+    setSelectedTag(prev => prev === tag ? null : tag);
+    onTagClick?.(tag);
+  }, [onTagClick]);
+
+  const selectedRecord = selectedId ? records.find(r => r.id === selectedId) : null;
+
+  // TTS 朗读
   const playTTS = useCallback(async (text: string, author?: string) => {
     if (playingTTS) {
       if (audioRef.current) {
@@ -355,9 +366,7 @@ export default function Diary3DGraph({
 
     setPlayingTTS(true);
     try {
-      // 根据作者选择声音类型，默认用她的声音
       const voiceType = (author === 'him') ? 'his' : 'her';
-
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -381,46 +390,6 @@ export default function Diary3DGraph({
     }
   }, [playingTTS]);
 
-  // Calculate galaxy positions
-  const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
-
-  // Get all unique tags
-  const allTags = useMemo(() => {
-    const tagSet = new Set<string>();
-    records.forEach(r => r.tags?.forEach(t => tagSet.add(t)));
-    return Array.from(tagSet).sort();
-  }, [records]);
-
-  // Filter records
-  const filteredRecords = useMemo(() => {
-    let filtered = records;
-
-    if (timeFilter !== 'all') {
-      const days = timeFilter === '7d' ? 7 : 30;
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
-      filtered = filtered.filter(r => new Date(r.created_at) >= cutoff);
-    }
-
-    if (selectedTag) {
-      filtered = filtered.filter(r => r.tags?.includes(selectedTag));
-    }
-
-    return filtered;
-  }, [records, timeFilter, selectedTag]);
-
-  const handleNodeClick = useCallback((record: GraphRecord) => {
-    setSelectedId(prev => prev === record.id ? null : record.id);
-    onNodeClick?.(record);
-  }, [onNodeClick]);
-
-  const handleTagClick = useCallback((tag: string) => {
-    setSelectedTag(prev => prev === tag ? null : tag);
-    onTagClick?.(tag);
-  }, [onTagClick]);
-
-  const selectedRecord = selectedId ? records.find(r => r.id === selectedId) : null;
-
   return (
     <div className="w-full h-screen relative" style={{
       background: 'radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f23 50%, #050510 100%)'
@@ -430,8 +399,8 @@ export default function Diary3DGraph({
         <div className="bg-black/70 backdrop-blur-md rounded-xl p-3">
           <div className="text-xs text-gray-400 mb-2">时间筛选</div>
           <div className="flex gap-1">
-            {['7d', '30d', 'all'].map(v => (
-              <button key={v} onClick={() => setTimeFilter(v as typeof timeFilter)}
+            {(['7d', '30d', 'all'] as const).map(v => (
+              <button key={v} onClick={() => setTimeFilter(v)}
                 className={`px-3 py-1 rounded-lg text-xs ${timeFilter === v ? 'bg-pink-500 text-white' : 'bg-gray-700 text-gray-300'}`}>
                 {v === '7d' ? '7天' : v === '30d' ? '30天' : '全部'}
               </button>
@@ -464,10 +433,10 @@ export default function Diary3DGraph({
       </div>
 
       {/* 3D Canvas */}
-      <Canvas camera={{ position: [0, 5, 15], fov: 60 }} gl={{ antialias: true }}>
+      <Canvas camera={{ position: [0, 5, 15], fov: 60 }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
         <GalaxyScene
           records={filteredRecords}
-          positions={positions}
+          positions={filteredPositions}
           selectedId={selectedId}
           onNodeClick={handleNodeClick}
         />
@@ -487,7 +456,6 @@ export default function Diary3DGraph({
               <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
 
-            {/* Record images - clickable */}
             {(selectedRecord.image_urls || selectedRecord.image_url) && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {selectedRecord.image_urls?.map((url, idx) => (
@@ -533,23 +501,11 @@ export default function Diary3DGraph({
         </div>
       )}
 
-      {/* Image Lightbox Modal */}
+      {/* Image Lightbox */}
       {selectedImage && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
-          onClick={() => setSelectedImage(null)}
-        >
-          <button
-            className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition"
-            onClick={() => setSelectedImage(null)}
-          >
-            ✕
-          </button>
-          <img
-            src={selectedImage}
-            alt="查看大图"
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
-          />
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setSelectedImage(null)}>
+          <button className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition" onClick={() => setSelectedImage(null)}>✕</button>
+          <img src={selectedImage} alt="查看大图" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
         </div>
       )}
     </div>

@@ -1,18 +1,10 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import Image from 'next/image';
 
-// 动态导入 3D 组件，禁用 SSR
-const Diary3DGraph = dynamic(() => import('@/components/Diary3DGraph'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-screen bg-gray-900">
-      <div className="text-pink-400 text-xl">加载3D图谱中...</div>
-    </div>
-  )
-});
+const Diary3DGraph = lazy(() => import('@/components/Diary3DGraph'));
 
 interface RecordNode {
   id: number;
@@ -23,6 +15,19 @@ interface RecordNode {
   author?: string;
   created_at: string;
   type: string;
+}
+
+function GraphSkeleton() {
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-gray-900">
+      <div className="relative">
+        <div className="w-16 h-16 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-pink-400 text-2xl">💕</div>
+      </div>
+      <div className="text-pink-400 text-xl mt-4">加载3D图谱中...</div>
+      <div className="text-gray-500 text-sm mt-2">正在构建你们的回忆星系</div>
+    </div>
+  );
 }
 
 export default function GraphPage() {
@@ -48,7 +53,8 @@ export default function GraphPage() {
 
   const fetchRecords = async () => {
     try {
-      const res = await fetch(`/api/records?deviceId=${deviceId}`);
+      // 优化：只请求需要的字段，不获取图片
+      const res = await fetch(`/api/records?deviceId=${deviceId}&fields=id,content,tags,author,created_at,type`);
       const data = await res.json();
       setRecords(data.records || []);
     } catch (error) {
@@ -69,9 +75,7 @@ export default function GraphPage() {
   return (
     <div className="w-full h-screen">
       {loading ? (
-        <div className="flex items-center justify-center h-screen bg-gray-900">
-          <div className="text-pink-400 text-xl">加载中...</div>
-        </div>
+        <GraphSkeleton />
       ) : records.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900">
           <div className="text-6xl mb-4">💕</div>
@@ -85,14 +89,15 @@ export default function GraphPage() {
           </button>
         </div>
       ) : (
-        <Diary3DGraph
-          records={records}
-          onNodeClick={handleNodeClick}
-          onTagClick={handleTagClick}
-        />
+        <Suspense fallback={<GraphSkeleton />}>
+          <Diary3DGraph
+            records={records}
+            onNodeClick={handleNodeClick}
+            onTagClick={handleTagClick}
+          />
+        </Suspense>
       )}
 
-      {/* 返回按钮 */}
       <button
         onClick={() => router.push('/')}
         className="absolute top-4 right-4 z-10 px-4 py-2 bg-black/60 backdrop-blur-sm text-pink-400 rounded-lg hover:bg-black/80 transition"

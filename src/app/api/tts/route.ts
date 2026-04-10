@@ -6,9 +6,22 @@ import path from 'path';
 let clonedVoices: { his: string; her: string } = { his: '', her: '' };
 let isInitialized = false;
 
+// 获取项目根目录
+function getProjectRoot(): string {
+  // Vercel 环境变量
+  if (process.env.VERCEL) {
+    return '/var/task';
+  }
+  // 本地开发
+  return process.cwd();
+}
+
 // 初始化：从sounds文件夹读取音频文件并克隆
 async function initializeVoices() {
-  if (isInitialized) return;
+  if (isInitialized) {
+    console.log('Voices already initialized, skipping...');
+    return;
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -16,7 +29,19 @@ async function initializeVoices() {
     return;
   }
 
-  const soundsDir = path.join(process.cwd(), 'sounds');
+  const projectRoot = getProjectRoot();
+  const soundsDir = path.join(projectRoot, 'sounds');
+  console.log('Project root:', projectRoot);
+  console.log('Sounds directory:', soundsDir);
+
+  // 检查sounds目录是否存在
+  try {
+    await fs.access(soundsDir);
+    console.log('Sounds directory exists');
+  } catch (e) {
+    console.error('Sounds directory does not exist:', e);
+  }
+
   const voiceFiles: { type: 'his' | 'her'; filename: string }[] = [
     { type: 'his', filename: 'his_voice.m4a' },
     { type: 'her', filename: 'her_voice.m4a' }
@@ -24,15 +49,18 @@ async function initializeVoices() {
 
   for (const voice of voiceFiles) {
     const filePath = path.join(soundsDir, voice.filename);
+    console.log(`Checking file: ${filePath}`);
 
     try {
       await fs.access(filePath);
+      console.log(`File exists: ${voice.filename}`);
 
       // 读取音频文件
       const fileBuffer = await fs.readFile(filePath);
       const fileName = voice.filename;
+      console.log(`File size: ${fileBuffer.length} bytes`);
 
-      console.log(`Uploading ${voice.type} voice: ${fileName}`);
+      console.log(`[${voice.type}] Uploading ${fileName}...`);
 
       // 1. 上传音频文件获取 file_id
       const uploadUrl = 'https://api.minimax.chat/v1/files/upload';
@@ -48,26 +76,32 @@ async function initializeVoices() {
         body: uploadFormData
       });
 
+      console.log(`[${voice.type}] Upload response status:`, uploadResponse.status);
+
       if (!uploadResponse.ok) {
-        console.error(`Upload failed for ${voice.type}:`, await uploadResponse.json().catch(() => ({})));
+        const errorText = await uploadResponse.text();
+        console.error(`[${voice.type}] Upload failed:`, errorText);
         continue;
       }
 
       const uploadData = await uploadResponse.json();
+      console.log(`[${voice.type}] Upload response:`, JSON.stringify(uploadData));
       const fileId = uploadData.file?.file_id;
 
       if (!fileId) {
-        console.error(`No file_id for ${voice.type}:`, uploadData);
+        console.error(`[${voice.type}] No file_id in response:`, uploadData);
         continue;
       }
 
-      console.log(`File uploaded, file_id: ${fileId}`);
+      console.log(`[${voice.type}] File uploaded, file_id: ${fileId}`);
 
       // 2. 调用音色克隆接口
       const voiceId = voice.type === 'his' ? 'his_voice' : 'her_voice';
       const sampleText = voice.type === 'his'
         ? '今天是我们在一起的第100天，我想对她说，我爱你。'
         : '亲爱的，我会一直陪在你身边，守护你，爱你。';
+
+      console.log(`[${voice.type}] Calling clone API with voice_id: ${voiceId}...`);
 
       const cloneUrl = 'https://api.minimax.chat/v1/voice_clone';
       const cloneResponse = await fetch(cloneUrl, {
@@ -84,31 +118,41 @@ async function initializeVoices() {
         })
       });
 
+      console.log(`[${voice.type}] Clone response status:`, cloneResponse.status);
+
       if (!cloneResponse.ok) {
-        console.error(`Clone failed for ${voice.type}:`, await cloneResponse.json().catch(() => ({})));
+        const errorText = await cloneResponse.text();
+        console.error(`[${voice.type}] Clone failed:`, errorText);
         continue;
       }
 
       const cloneData = await cloneResponse.json();
-      console.log(`Clone response for ${voice.type}:`, cloneData);
+      console.log(`[${voice.type}] Clone response:`, JSON.stringify(cloneData));
+
+      // 检查是否余额不足
+      if (cloneData.base_resp?.status_code === 1008) {
+        console.error(`[${voice.type}] Insufficient balance! Voice clone failed.`);
+        continue;
+      }
 
       // 保存克隆的 voice_id
       clonedVoices[voice.type] = voiceId;
-      console.log(`${voice.type} voice cloned successfully: ${voiceId}`);
+      console.log(`[${voice.type}] Voice cloned successfully: ${voiceId}`);
 
     } catch (error) {
-      console.error(`Error processing ${voice.type} voice:`, error);
+      console.error(`[${voice.type}] Error:`, error);
     }
   }
 
   isInitialized = true;
-  console.log('Voice initialization complete:', clonedVoices);
+  console.log('Voice initialization complete. Cloned voices:', clonedVoices);
 }
 
 // TTS 合成
 export async function POST(request: NextRequest) {
   try {
     // 初始化声音（如果尚未初始化）
+    console.log('Initializing voices...');
     await initializeVoices();
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -123,12 +167,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
-    // 根据voiceType选择声音，默认用her的声音
-    const selectedVoice = (voiceType === 'his' && clonedVoices.his) ? clonedVoices.his : (clonedVoices.her || 'female-shaonv');
+    console.log('Current cloned voices:', clonedVoices);
+    console.log('Requested voiceType:', voiceType);
 
-    if (!clonedVoices.his && !clonedVoices.her) {
-      return NextResponse.json({ error: '尚未克隆声音，请确保sounds文件夹中有音频文件' }, { status: 400 });
+    // 根据voiceType选择声音
+    // 如果对应的克隆声音存在且有余额，使用克隆声音
+    // 否则使用默认音色
+    let selectedVoice = '';
+
+    if (voiceType === 'his' && clonedVoices.his) {
+      selectedVoice = clonedVoices.his;
+      console.log('Using his cloned voice');
+    } else if (voiceType === 'her' && clonedVoices.her) {
+      selectedVoice = clonedVoices.her;
+      console.log('Using her cloned voice');
+    } else if (clonedVoices.her) {
+      selectedVoice = clonedVoices.her;
+      console.log('Falling back to her cloned voice');
+    } else if (clonedVoices.his) {
+      selectedVoice = clonedVoices.his;
+      console.log('Falling back to his cloned voice');
+    } else {
+      // 使用默认音色
+      selectedVoice = voiceType === 'his' ? 'male-qn-jingying' : 'female-shaonv';
+      console.log('Using default voice:', selectedVoice);
     }
+
+    console.log('Selected voice:', selectedVoice);
 
     const textContent = text.trim().slice(0, 1000);
 
@@ -150,26 +215,40 @@ export async function POST(request: NextRequest) {
       })
     });
 
+    console.log('TTS response status:', response.status);
+
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return NextResponse.json({ error: 'TTS失败', details: error }, { status: 500 });
+      const errorText = await response.text();
+      console.error('TTS response error:', errorText);
+      try {
+        const error = JSON.parse(errorText);
+        return NextResponse.json({ error: 'TTS失败', details: error }, { status: 500 });
+      } catch {
+        return NextResponse.json({ error: 'TTS失败', details: errorText }, { status: 500 });
+      }
     }
 
     // 处理响应
     const contentType = response.headers.get('content-type') || '';
+    console.log('TTS response content-type:', contentType);
+
     let audioBase64: string;
 
     if (contentType.includes('application/json')) {
       const data = await response.json();
+      console.log('TTS JSON response:', JSON.stringify(data));
       audioBase64 = data.data?.audio;
     } else {
       const audioBuffer = await response.arrayBuffer();
+      console.log('TTS audio buffer size:', audioBuffer.byteLength);
       audioBase64 = Buffer.from(audioBuffer).toString('base64');
     }
 
     if (!audioBase64) {
       return NextResponse.json({ error: '音频生成失败' }, { status: 500 });
     }
+
+    console.log('Audio generated successfully, length:', audioBase64.length);
 
     return NextResponse.json({
       audio: audioBase64,

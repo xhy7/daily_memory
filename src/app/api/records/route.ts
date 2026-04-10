@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, deleteMemoryRecord, initializeDatabase } from '@/lib/db';
 
-// Increase body parser limit for large image uploads
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Initialize database on first request
+// 缓存头
+const CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=300';
+
+// 数据库初始化
 let dbInitialized = false;
 
 async function ensureDatabase() {
@@ -27,6 +29,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const deviceId = searchParams.get('deviceId');
     const date = searchParams.get('date');
+    const limit = parseInt(searchParams.get('limit') || '100');
+    const offset = parseInt(searchParams.get('offset') || '0');
+    const fields = searchParams.get('fields');
+    const recent = searchParams.get('recent'); // 新增：只获取最近N条记录
+    const recentDays = searchParams.get('recentDays'); // 新增：获取最近N天的记录
 
     if (!deviceId) {
       return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
@@ -35,10 +42,50 @@ export async function GET(request: NextRequest) {
     let records;
     if (date) {
       records = await getMemoryRecordsByDate(deviceId, date);
+    } else if (recent) {
+      // 只获取最近的记录数量
+      const allRecords = await getMemoryRecordsByDevice(deviceId);
+      records = allRecords.slice(0, parseInt(recent));
+    } else if (recentDays) {
+      // 只获取最近N天的记录
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - parseInt(recentDays));
+      const allRecords = await getMemoryRecordsByDevice(deviceId);
+      records = allRecords.filter(r => new Date(r.created_at) >= cutoff);
     } else {
       records = await getMemoryRecordsByDevice(deviceId);
     }
-    return NextResponse.json({ records });
+
+    const total = records.length;
+    const paginatedRecords = records.slice(offset, offset + limit);
+
+    // 字段过滤
+    let finalRecords = paginatedRecords;
+    if (fields) {
+      const fieldList = fields.split(',').map(f => f.trim());
+      finalRecords = paginatedRecords.map(record => {
+        const filtered: Record<string, unknown> = {};
+        fieldList.forEach(field => {
+          if (field in record) {
+            filtered[field] = (record as Record<string, unknown>)[field];
+          }
+        });
+        return filtered;
+      });
+    }
+
+    const response = NextResponse.json({
+      records: finalRecords,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    });
+
+    response.headers.set('Cache-Control', CACHE_CONTROL);
+    return response;
   } catch (error) {
     console.error('Failed to fetch records:', error);
     return NextResponse.json({ error: 'Failed to fetch records', details: String(error) }, { status: 500 });
@@ -56,7 +103,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Support both single image and multiple images
     const finalImageUrls = imageUrls || (imageUrl ? [imageUrl] : undefined);
 
     const record = await createMemoryRecord(deviceId, type, content, finalImageUrls, author);

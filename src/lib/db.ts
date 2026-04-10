@@ -59,6 +59,28 @@ export async function initializeDatabase() {
     `;
     console.log('Cloned voices table created or already exists');
 
+    // Add indexes for better query performance
+    try {
+      await sql`CREATE INDEX IF NOT EXISTS idx_records_device_id ON records(device_id)`;
+      console.log('Index idx_records_device_id created');
+    } catch (e) {
+      console.log('Index idx_records_device_id already exists or error:', e);
+    }
+
+    try {
+      await sql`CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC)`;
+      console.log('Index idx_records_created_at created');
+    } catch (e) {
+      console.log('Index idx_records_created_at already exists or error:', e);
+    }
+
+    try {
+      await sql`CREATE INDEX IF NOT EXISTS idx_records_device_created ON records(device_id, created_at DESC)`;
+      console.log('Index idx_records_device_created created');
+    } catch (e) {
+      console.log('Index idx_records_device_created already exists or error:', e);
+    }
+
     // Add columns if they don't exist
     try {
       await sql`ALTER TABLE records ADD COLUMN image_urls JSONB DEFAULT '[]'`;
