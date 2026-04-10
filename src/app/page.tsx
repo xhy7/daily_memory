@@ -65,6 +65,9 @@ export default function Home() {
           <Link href="/history" className="block p-5 bg-gradient-to-r from-pink-200 to-rose-200 text-rose-600 rounded-2xl text-center hover:from-pink-300 hover:to-rose-300 transition shadow-lg transform hover:scale-[1.02]">
             <span className="text-xl font-medium">📅 浏览回忆</span>
           </Link>
+          <Link href="/graph" className="block p-5 bg-gradient-to-r from-purple-400 to-indigo-400 text-white rounded-2xl text-center hover:from-purple-500 hover:to-indigo-500 transition shadow-lg transform hover:scale-[1.02]">
+            <span className="text-xl font-medium">🔮 3D记忆图谱</span>
+          </Link>
         </div>
 
         {/* Sweet quote */}
