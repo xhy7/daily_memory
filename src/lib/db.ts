@@ -64,15 +64,24 @@ export async function createMemoryRecord(
   tags?: string[]
 ): Promise<MemoryRecord> {
   // Handle both single image and multiple images
-  const imageUrl = Array.isArray(imageUrls) ? imageUrls[0] : imageUrls;
-  const imageUrlsJson = Array.isArray(imageUrls) ? JSON.stringify(imageUrls) : '[]';
+  const imageUrl = Array.isArray(imageUrls) ? imageUrls[0] : (imageUrls || null);
+  const imageUrlsJson = Array.isArray(imageUrls) && imageUrls.length > 0
+    ? JSON.stringify(imageUrls)
+    : null;
 
   const result = await sql`
     INSERT INTO records (device_id, type, content, image_url, image_urls, author, tags)
-    VALUES (${deviceId}, ${type}, ${content}, ${imageUrl || null}, ${imageUrlsJson}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'})
+    VALUES (${deviceId}, ${type}, ${content}, ${imageUrl}, ${imageUrlsJson}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'})
     RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
-  return result.rows[0] as unknown as MemoryRecord;
+
+  const row = result.rows[0];
+  // Parse JSON fields properly
+  return {
+    ...row,
+    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+  } as unknown as MemoryRecord;
 }
 
 export async function getMemoryRecordsByDevice(deviceId: string): Promise<MemoryRecord[]> {
@@ -82,7 +91,12 @@ export async function getMemoryRecordsByDevice(deviceId: string): Promise<Memory
     WHERE device_id = ${deviceId}
     ORDER BY created_at DESC
   `;
-  return result.rows as unknown as MemoryRecord[];
+  // Parse JSON fields properly
+  return result.rows.map(row => ({
+    ...row,
+    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+  })) as unknown as MemoryRecord[];
 }
 
 export async function getMemoryRecordsByDate(deviceId: string, date: string): Promise<MemoryRecord[]> {
@@ -92,7 +106,11 @@ export async function getMemoryRecordsByDate(deviceId: string, date: string): Pr
     WHERE device_id = ${deviceId} AND DATE(created_at) = ${date}
     ORDER BY created_at DESC
   `;
-  return result.rows as unknown as MemoryRecord[];
+  return result.rows.map(row => ({
+    ...row,
+    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+  })) as unknown as MemoryRecord[];
 }
 
 export async function updateMemoryRecordPolishedContent(
@@ -105,7 +123,12 @@ export async function updateMemoryRecordPolishedContent(
     WHERE id = ${id}
     RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
-  return result.rows[0] as unknown as MemoryRecord;
+  const row = result.rows[0];
+  return {
+    ...row,
+    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+  } as unknown as MemoryRecord;
 }
 
 export async function updateMemoryRecordTags(
@@ -118,7 +141,12 @@ export async function updateMemoryRecordTags(
     WHERE id = ${id}
     RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
   `;
-  return result.rows[0] as unknown as MemoryRecord;
+  const row = result.rows[0];
+  return {
+    ...row,
+    image_urls: typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []),
+    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+  } as unknown as MemoryRecord;
 }
 
 export async function deleteMemoryRecord(id: number): Promise<void> {
