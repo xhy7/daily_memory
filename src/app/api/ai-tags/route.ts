@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     if (tags.length === 0) {
       const quoted = responseText.match(/"([^"]+)"/g);
       if (quoted) {
-        tags = quoted.map(q => q.replace(/"/g, '').trim());
+        tags = quoted.map((q: string) => q.replace(/"/g, '').trim());
       }
     }
 
