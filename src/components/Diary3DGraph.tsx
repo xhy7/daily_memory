@@ -338,6 +338,7 @@ export default function Diary3DGraph({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   // Calculate galaxy positions
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
@@ -434,7 +435,7 @@ export default function Diary3DGraph({
       {/* Detail Modal */}
       {selectedRecord && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
-          <div className="bg-gray-900/95 backdrop-blur-md rounded-2xl p-6 max-w-sm w-full border border-pink-500/30">
+          <div className="bg-gray-900/95 backdrop-blur-md rounded-2xl p-6 max-w-sm w-full border border-pink-500/30 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-3">
               <div>
                 <div className="text-pink-400 text-sm">{new Date(selectedRecord.created_at).toLocaleString('zh-CN')}</div>
@@ -445,13 +446,23 @@ export default function Diary3DGraph({
               <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
 
-            {/* Record images */}
+            {/* Record images - clickable */}
             {(selectedRecord.image_urls || selectedRecord.image_url) && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {selectedRecord.image_urls?.map((url, idx) => (
-                  <img key={idx} src={url} alt="" className="w-full max-h-32 object-cover rounded-lg" />
+                  <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
+                    <img src={url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
+                      <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
+                    </div>
+                  </button>
                 )) || (selectedRecord.image_url && (
-                  <img src={selectedRecord.image_url} alt="" className="w-full max-h-32 object-cover rounded-lg" />
+                  <button onClick={() => setSelectedImage(selectedRecord.image_url!)} className="relative group">
+                    <img src={selectedRecord.image_url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
+                      <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -468,6 +479,26 @@ export default function Diary3DGraph({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Image Lightbox Modal */}
+      {selectedImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setSelectedImage(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition"
+            onClick={() => setSelectedImage(null)}
+          >
+            ✕
+          </button>
+          <img
+            src={selectedImage}
+            alt="查看大图"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+          />
         </div>
       )}
     </div>
