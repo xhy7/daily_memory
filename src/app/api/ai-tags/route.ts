@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
       const cleanText = responseText.replace(/[\[\]【】""]/g, '');
       const parts = cleanText.split(/[,，、\n]+/);
       tags = parts
-        .map(p => p.trim())
-        .filter(p => p.length >= 1 && p.length <= 10);
+        .map((p: string) => p.trim())
+        .filter((p: string) => p.length >= 1 && p.length <= 10);
     }
 
     // Strategy 4: Extract any quoted strings
