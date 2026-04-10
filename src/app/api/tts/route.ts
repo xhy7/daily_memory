@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 export const runtime = 'nodejs';
+
+// 获取 __dirname
+const getDirname = () => {
+  if (typeof __dirname !== 'undefined') {
+    return __dirname;
+  }
+  // 兼容处理
+  return path.dirname(fileURLToPath(import.meta.url));
+};
 
 // 存储已克隆的声音ID
 let clonedVoices: { his: string; her: string } = { his: '', her: '' };
@@ -10,21 +20,39 @@ let isInitialized = false;
 
 // 尝试多个可能的 sounds 目录位置
 async function findSoundsDir(): Promise<string | null> {
+  const currentDir = getDirname();
   const possiblePaths = [
     '/var/task/sounds',
-    '/var/task/src/../sounds',
+    '/var/task/sounds/',
     process.cwd() + '/sounds',
-    process.cwd() + '/../sounds',
+    path.join(currentDir, '../../../../sounds'),
+    path.join(currentDir, '../../../../../sounds'),
+    path.join(currentDir, '../../../sounds'),
+    path.join(process.cwd(), 'sounds'),
   ];
 
+  console.log('Trying to find sounds directory...');
+  console.log('Current dir (getDirname):', currentDir);
+  console.log('process.cwd():', process.cwd());
+
   for (const dir of possiblePaths) {
+    console.log(`Checking: ${dir}`);
     try {
       await fs.access(dir);
       console.log(`Found sounds directory at: ${dir}`);
       return dir;
     } catch {
-      console.log(`Sounds directory not found at: ${dir}`);
+      // Not found
     }
+  }
+
+  // 尝试列出 /var/task 目录内容
+  console.log('Listing /var/task contents:');
+  try {
+    const taskFiles = await fs.readdir('/var/task');
+    console.log('/var/task files:', taskFiles);
+  } catch (e) {
+    console.log('Cannot read /var/task:', e);
   }
 
   return null;
