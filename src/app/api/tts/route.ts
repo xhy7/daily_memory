@@ -101,7 +101,7 @@ async function initializeVoices() {
       console.log(`[${voice.type}] Uploading ${fileName}...`);
 
       // 1. 上传音频文件获取 file_id
-      const uploadUrl = 'https://api.minimax.chat/v1/files/upload';
+      const uploadUrl = 'https://api.minimax.com/v1/files/upload';
       const uploadFormData = new FormData();
       uploadFormData.append('purpose', 'voice_clone');
       uploadFormData.append('file', new Blob([fileBuffer]), fileName);
@@ -155,7 +155,7 @@ async function initializeVoices() {
 
       console.log(`[${voice.type}] Calling clone API with voice_id: ${voiceId}...`);
 
-      const cloneUrl = 'https://api.minimax.chat/v1/voice_clone';
+      const cloneUrl = 'https://api.minimax.com/v1/voice_clone';
       const cloneResponse = await fetch(cloneUrl, {
         method: 'POST',
         headers: {
@@ -186,22 +186,34 @@ async function initializeVoices() {
 
       console.log(`[${voice.type}] Clone response:`, JSON.stringify(cloneData));
 
-      // 检查各种可能的错误
-      const errorCode = cloneData.base_resp?.status_code || cloneData.error?.code || cloneData.code;
-      if (errorCode === 1008 || errorCode === 'insufficient_balance') {
-        console.error(`[${voice.type}] Insufficient balance! Voice clone failed.`);
-        continue;
-      }
+      // 直接检查是否成功 - 音色克隆成功应该返回 voice_id
+      const returnedVoiceId = cloneData.voice_id || cloneData.voiceId;
+      if (returnedVoiceId) {
+        // 克隆成功
+        clonedVoices[voice.type] = returnedVoiceId;
+        console.log(`[${voice.type}] Voice cloned successfully: ${returnedVoiceId}`);
+      } else {
+        // 检查错误
+        const baseResp = cloneData.base_resp;
+        const errorObj = cloneData.error;
+        const directCode = cloneData.code;
+        const statusCode = cloneData.status_code;
+        const msg = cloneData.message || cloneData.msg;
 
-      // 检查是否有错误
-      if (!cloneResponse.ok || cloneData.error) {
-        console.error(`[${voice.type}] Clone failed with error:`, cloneData);
-        continue;
-      }
+        console.log(`[${voice.type}] Error check - base_resp:`, baseResp);
+        console.log(`[${voice.type}] Error check - error:`, errorObj);
+        console.log(`[${voice.type}] Error check - code:`, directCode);
+        console.log(`[${voice.type}] Error check - status_code:`, statusCode);
+        console.log(`[${voice.type}] Error check - message:`, msg);
 
-      // 保存克隆的 voice_id
-      clonedVoices[voice.type] = voiceId;
-      console.log(`[${voice.type}] Voice cloned successfully: ${voiceId}`);
+        // 检查各种可能的错误
+        const errorCode = baseResp?.status_code || errorObj?.code || directCode || statusCode;
+        if (errorCode === 1008 || errorCode === 'insufficient_balance') {
+          console.error(`[${voice.type}] Insufficient balance! Voice clone failed.`);
+        } else {
+          console.error(`[${voice.type}] Clone failed with response:`, cloneData);
+        }
+      }
 
     } catch (error) {
       console.error(`[${voice.type}] Error:`, error);
@@ -264,7 +276,7 @@ export async function POST(request: NextRequest) {
     console.log('TTS request:', { text: textContent, voiceId: selectedVoice });
 
     // 调用 TTS API
-    const response = await fetch('https://api.minimax.chat/v1/t2a_v2', {
+    const response = await fetch('https://api.minimax.com/v1/t2a_v2', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
