@@ -56,8 +56,21 @@ export async function POST(request: NextRequest) {
 
     const responseText = data.choices?.[0]?.message?.content?.trim() || '';
     console.log('AI response text:', responseText);
+    console.log('Full API response:', JSON.stringify(data));
 
     let tags: string[] = [];
+
+    // 检查 API 返回的数据结构
+    if (!data.choices || data.choices.length === 0) {
+      console.error('No choices in API response:', data);
+      return NextResponse.json({
+        error: 'API返回为空',
+        details: {
+          rawResponse: JSON.stringify(data),
+          message: 'MiniMax API 没有返回有效响应'
+        }
+      }, { status: 500 });
+    }
 
     // Strategy 1: Direct JSON parse
     try {
