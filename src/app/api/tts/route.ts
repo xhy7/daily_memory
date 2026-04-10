@@ -119,10 +119,24 @@ async function initializeVoices() {
       if (!uploadResponse.ok) {
         const errorText = await uploadResponse.text();
         console.error(`[${voice.type}] Upload failed:`, errorText);
+        try {
+          const errorObj = JSON.parse(errorText);
+          console.error(`[${voice.type}] Upload error details:`, JSON.stringify(errorObj));
+        } catch {}
         continue;
       }
 
-      const uploadData = await uploadResponse.json();
+      // 解析上传响应
+      let uploadData;
+      const uploadContentType = uploadResponse.headers.get('content-type');
+      if (uploadContentType?.includes('application/json')) {
+        uploadData = await uploadResponse.json();
+      } else {
+        const text = await uploadResponse.text();
+        console.error(`[${voice.type}] Upload response not JSON:`, text);
+        uploadData = { error: text };
+      }
+
       console.log(`[${voice.type}] Upload response:`, JSON.stringify(uploadData));
       const fileId = uploadData.file?.file_id;
 
@@ -158,18 +172,30 @@ async function initializeVoices() {
 
       console.log(`[${voice.type}] Clone response status:`, cloneResponse.status);
 
-      if (!cloneResponse.ok) {
+      // 解析响应
+      let cloneData;
+      const contentType = cloneResponse.headers.get('content-type');
+      if (contentType?.includes('application/json')) {
+        cloneData = await cloneResponse.json();
+      } else {
+        // 不是 JSON，可能是错误信息
         const errorText = await cloneResponse.text();
-        console.error(`[${voice.type}] Clone failed:`, errorText);
+        console.error(`[${voice.type}] Clone response is not JSON:`, errorText);
+        cloneData = { error: errorText };
+      }
+
+      console.log(`[${voice.type}] Clone response:`, JSON.stringify(cloneData));
+
+      // 检查各种可能的错误
+      const errorCode = cloneData.base_resp?.status_code || cloneData.error?.code || cloneData.code;
+      if (errorCode === 1008 || errorCode === 'insufficient_balance') {
+        console.error(`[${voice.type}] Insufficient balance! Voice clone failed.`);
         continue;
       }
 
-      const cloneData = await cloneResponse.json();
-      console.log(`[${voice.type}] Clone response:`, JSON.stringify(cloneData));
-
-      // 检查是否余额不足
-      if (cloneData.base_resp?.status_code === 1008) {
-        console.error(`[${voice.type}] Insufficient balance! Voice clone failed.`);
+      // 检查是否有错误
+      if (!cloneResponse.ok || cloneData.error) {
+        console.error(`[${voice.type}] Clone failed with error:`, cloneData);
         continue;
       }
 
