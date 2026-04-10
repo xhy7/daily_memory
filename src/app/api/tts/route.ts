@@ -1,30 +1,140 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { promises as fs } from 'fs';
+import path from 'path';
 
+// 存储已克隆的声音ID
+let clonedVoices: { his: string; her: string } = { his: '', her: '' };
+let isInitialized = false;
+
+// 初始化：从sounds文件夹读取音频文件并克隆
+async function initializeVoices() {
+  if (isInitialized) return;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error('API Key not configured');
+    return;
+  }
+
+  const soundsDir = path.join(process.cwd(), 'sounds');
+  const voiceFiles: { type: 'his' | 'her'; filename: string }[] = [
+    { type: 'his', filename: 'his_voice.m4a' },
+    { type: 'her', filename: 'her_voice.m4a' }
+  ];
+
+  for (const voice of voiceFiles) {
+    const filePath = path.join(soundsDir, voice.filename);
+
+    try {
+      await fs.access(filePath);
+
+      // 读取音频文件
+      const fileBuffer = await fs.readFile(filePath);
+      const fileName = voice.filename;
+
+      console.log(`Uploading ${voice.type} voice: ${fileName}`);
+
+      // 1. 上传音频文件获取 file_id
+      const uploadUrl = 'https://api.minimax.chat/v1/files/upload';
+      const uploadFormData = new FormData();
+      uploadFormData.append('purpose', 'voice_clone');
+      uploadFormData.append('file', new Blob([fileBuffer]), fileName);
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: uploadFormData
+      });
+
+      if (!uploadResponse.ok) {
+        console.error(`Upload failed for ${voice.type}:`, await uploadResponse.json().catch(() => ({})));
+        continue;
+      }
+
+      const uploadData = await uploadResponse.json();
+      const fileId = uploadData.file?.file_id;
+
+      if (!fileId) {
+        console.error(`No file_id for ${voice.type}:`, uploadData);
+        continue;
+      }
+
+      console.log(`File uploaded, file_id: ${fileId}`);
+
+      // 2. 调用音色克隆接口
+      const voiceId = voice.type === 'his' ? 'his_voice' : 'her_voice';
+      const sampleText = voice.type === 'his'
+        ? '今天是我们在一起的第100天，我想对她说，我爱你。'
+        : '亲爱的，我会一直陪在你身边，守护你，爱你。';
+
+      const cloneUrl = 'https://api.minimax.chat/v1/voice_clone';
+      const cloneResponse = await fetch(cloneUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          file_id: fileId,
+          voice_id: voiceId,
+          text: sampleText,
+          model: 'speech-2.8'
+        })
+      });
+
+      if (!cloneResponse.ok) {
+        console.error(`Clone failed for ${voice.type}:`, await cloneResponse.json().catch(() => ({})));
+        continue;
+      }
+
+      const cloneData = await cloneResponse.json();
+      console.log(`Clone response for ${voice.type}:`, cloneData);
+
+      // 保存克隆的 voice_id
+      clonedVoices[voice.type] = voiceId;
+      console.log(`${voice.type} voice cloned successfully: ${voiceId}`);
+
+    } catch (error) {
+      console.error(`Error processing ${voice.type} voice:`, error);
+    }
+  }
+
+  isInitialized = true;
+  console.log('Voice initialization complete:', clonedVoices);
+}
+
+// TTS 合成
 export async function POST(request: NextRequest) {
   try {
+    // 初始化声音（如果尚未初始化）
+    await initializeVoices();
+
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
     }
 
     const body = await request.json();
-    const { text, voiceId, model } = body;
+    const { text, voiceType } = body;
 
-    if (!text || text.trim().length === 0) {
+    if (!text) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
-    // 限制文本长度
+    // 根据voiceType选择声音，默认用her的声音
+    const selectedVoice = (voiceType === 'his' && clonedVoices.his) ? clonedVoices.his : (clonedVoices.her || 'female-shaonv');
+
+    if (!clonedVoices.his && !clonedVoices.her) {
+      return NextResponse.json({ error: '尚未克隆声音，请确保sounds文件夹中有音频文件' }, { status: 400 });
+    }
+
     const textContent = text.trim().slice(0, 1000);
 
-    // 使用默认音色或自定义音色
-    // 可用的音色ID: male-qn-qingse, female-shaonv, male-qn-jingying, female-yujie, male-qn-badao, female-tianxiang
-    const selectedVoiceId = voiceId || 'female-shaonv';
-    const selectedModel = model || 'speech-2.8';
+    console.log('TTS request:', { text: textContent, voiceId: selectedVoice });
 
-    console.log('TTS request:', { text: textContent, voiceId: selectedVoiceId, model: selectedModel });
-
-    // 调用 MiniMax TTS API (同步接口)
+    // 调用 TTS API
     const response = await fetch('https://api.minimax.chat/v1/t2a_v2', {
       method: 'POST',
       headers: {
@@ -32,64 +142,39 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: selectedModel,
+        model: 'speech-2.8',
         text: textContent,
-        voice_id: selectedVoiceId,
+        voice_id: selectedVoice,
         speed: 1.0,
-        vol: 1.0,
-        pitch: 0,
-        audio_sample_rate: 32000,
-        bitrate: 128000,
         format: 'mp3'
       })
     });
 
-    console.log('TTS API status:', response.status);
-
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const errorMsg = errorData.base_resp?.status_msg || errorData.error?.message || 'TTS API failed';
-      console.error('TTS API error:', errorMsg);
-      return NextResponse.json({
-        error: 'TTS API错误',
-        details: `状态码: ${response.status}, 错误: ${errorMsg}`
-      }, { status: 500 });
+      const error = await response.json().catch(() => ({}));
+      return NextResponse.json({ error: 'TTS失败', details: error }, { status: 500 });
     }
 
-    // 检查返回类型
+    // 处理响应
     const contentType = response.headers.get('content-type') || '';
-    console.log('TTS response content-type:', contentType);
+    let audioBase64: string;
 
     if (contentType.includes('application/json')) {
-      // 如果返回JSON格式，包含base64音频
       const data = await response.json();
-      console.log('TTS JSON response:', data);
-
-      if (data.data?.audio) {
-        return NextResponse.json({
-          audio: data.data.audio,
-          format: 'mp3',
-          voiceId: selectedVoiceId,
-          textLength: textContent.length
-        });
-      }
-
-      return NextResponse.json({
-        error: 'TTS API返回格式异常',
-        details: JSON.stringify(data)
-      }, { status: 500 });
+      audioBase64 = data.data?.audio;
+    } else {
+      const audioBuffer = await response.arrayBuffer();
+      audioBase64 = Buffer.from(audioBuffer).toString('base64');
     }
 
-    // TTS API 返回的是二进制音频数据
-    const audioBuffer = await response.arrayBuffer();
-    const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+    if (!audioBase64) {
+      return NextResponse.json({ error: '音频生成失败' }, { status: 500 });
+    }
 
-    // 返回音频数据
     return NextResponse.json({
       audio: audioBase64,
       format: 'mp3',
-      voiceId: selectedVoiceId,
-      textLength: textContent.length
+      voiceId: selectedVoice
     });
   } catch (error) {
     console.error('TTS error:', error);
@@ -97,17 +182,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 获取可用的音色列表
+// 获取声音状态
 export async function GET() {
-  const voices = [
-    { id: 'female-shaonj', name: '少女', description: '甜美可爱的女声' },
-    { id: 'female-shaonv', name: '少女v2', description: '甜美可爱的女声v2' },
-    { id: 'female-yujie', name: '御姐', description: '成熟稳重的女声' },
-    { id: 'female-tianxiang', name: '天问', description: '温柔的女声' },
-    { id: 'male-qn-qingse', name: '青涩', description: '年轻青涩的男声' },
-    { id: 'male-qn-jingying', name: '精英', description: '成熟稳重的男声' },
-    { id: 'male-qn-badao', name: '霸道', description: '低沉磁性的男声' },
-  ];
+  await initializeVoices();
 
-  return NextResponse.json({ voices });
+  return NextResponse.json({
+    cloned: {
+      his: !!clonedVoices.his,
+      her: !!clonedVoices.her
+    },
+    voiceIds: clonedVoices
+  });
 }

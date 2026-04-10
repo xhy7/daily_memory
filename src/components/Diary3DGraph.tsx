@@ -20,7 +20,6 @@ interface Diary3DGraphProps {
   records: GraphRecord[];
   onNodeClick?: (record: GraphRecord) => void;
   onTagClick?: (tag: string) => void;
-  deviceId?: string;
 }
 
 // Generate beautiful galaxy-like spiral positions
@@ -334,8 +333,7 @@ function GalaxyScene({
 export default function Diary3DGraph({
   records,
   onNodeClick,
-  onTagClick,
-  deviceId: propDeviceId
+  onTagClick
 }: Diary3DGraphProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -343,9 +341,6 @@ export default function Diary3DGraph({
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [playingTTS, setPlayingTTS] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // 获取设备ID
-  const deviceId = propDeviceId || localStorage.getItem('coupleDeviceId') || 'couple_memory_001';
 
   // TTS 朗读功能 - 使用克隆的声音
   const playTTS = useCallback(async (text: string, author?: string) => {
@@ -363,10 +358,10 @@ export default function Diary3DGraph({
       // 根据作者选择声音类型，默认用她的声音
       const voiceType = (author === 'him') ? 'his' : 'her';
 
-      const res = await fetch('/api/voice-clone', {
-        method: 'PUT',
+      const res = await fetch('/api/tts', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceType, deviceId })
+        body: JSON.stringify({ text, voiceType })
       });
       const data = await res.json();
 
@@ -384,7 +379,7 @@ export default function Diary3DGraph({
       console.error('TTS error:', error);
       setPlayingTTS(false);
     }
-  }, [playingTTS, deviceId]);
+  }, [playingTTS]);
 
   // Calculate galaxy positions
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);

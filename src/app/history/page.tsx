@@ -52,10 +52,10 @@ export default function HistoryPage() {
       // 根据作者选择声音类型，默认用她的声音
       const voiceType = (author === 'him') ? 'his' : 'her';
 
-      const res = await fetch('/api/voice-clone', {
-        method: 'PUT',
+      const res = await fetch('/api/tts', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceType, deviceId })
+        body: JSON.stringify({ text, voiceType })
       });
       const data = await res.json();
 
