@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     const paginatedRecords = records.slice(offset, offset + limit);
 
     // 字段过滤
-    let finalRecords: typeof records = paginatedRecords;
+    let finalRecords: Record<string, unknown>[] = paginatedRecords;
     if (fields) {
       const fieldList = fields.split(',').map(f => f.trim());
       finalRecords = paginatedRecords.map(record => {
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
             filtered[field] = (record as unknown as Record<string, unknown>)[field];
           }
         });
-        return filtered as typeof record;
+        return filtered;
       });
     }
 
