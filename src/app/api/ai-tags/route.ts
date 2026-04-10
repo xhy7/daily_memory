@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
 请直接输出JSON数组：`;
 
-    // Use MiniMax API
+// Use MiniMax API
     const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
       method: 'POST',
       headers: {
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     try {
       const parsed = JSON.parse(responseText);
       if (Array.isArray(parsed)) {
-        tags = parsed.filter(t => typeof t === 'string' && t.length >= 1 && t.length <= 10);
+        tags = parsed.filter((t: unknown) => typeof t === 'string' && (t as string).length >= 1 && (t as string).length <= 10);
       }
     } catch {
       // Continue to next strategy
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
         try {
           const extracted = JSON.parse(match[0]);
           if (Array.isArray(extracted)) {
-            tags = extracted.filter(t => typeof t === 'string' && t.length >= 1 && t.length <= 10);
+            tags = extracted.filter((t: unknown) => typeof t === 'string' && (t as string).length >= 1 && (t as string).length <= 10);
           }
         } catch {
           // Continue
@@ -92,7 +92,6 @@ export async function POST(request: NextRequest) {
 
     // Strategy 3: Split by common separators
     if (tags.length === 0) {
-      // Remove brackets and split
       const cleanText = responseText.replace(/[\[\]【】""]/g, '');
       const parts = cleanText.split(/[,，、\n]+/);
       tags = parts
@@ -109,15 +108,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Ensure we have strings and limit to 8
-    tags = Array.from(new Set(tags)).filter(t => typeof t === 'string' && t.length > 0).slice(0, 8);
+    tags = Array.from(new Set(tags)).filter((t: string) => typeof t === 'string' && t.length > 0).slice(0, 8);
 
     // If still no tags, create some based on content analysis
     if (tags.length === 0 && textContent.length > 0) {
-      // Simple keyword extraction as fallback
       const keywords = textContent
         .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ' ')
         .split(/\s+/)
-        .filter(w => w.length >= 2 && w.length <= 6)
+        .filter((w: string) => w.length >= 2 && w.length <= 6)
         .slice(0, 5);
       tags = keywords;
     }
