@@ -58,6 +58,7 @@ export default function RecordPage() {
     try {
       const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}`);
       const data = await res.json();
+      console.log('Fetched records:', data);
       setTodayRecords(data.records || []);
     } catch (error) {
       console.error('Failed to fetch records:', error);
@@ -118,16 +119,31 @@ export default function RecordPage() {
       });
       const data = await res.json();
 
-      if (data.tags && data.tags.length > 0) {
-        await fetch('/api/records', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: recordId, tags: data.tags }),
-        });
+      console.log('AI tags response:', data);
 
-        setTodayRecords(todayRecords.map(r =>
-          r.id === recordId ? { ...r, tags: data.tags } : r
-        ));
+      if (data.error) {
+        alert('提取标签失败: ' + data.error);
+        setExtracting(false);
+        return;
+      }
+
+      if (data.tags && data.tags.length > 0) {
+        if (recordId === -1) {
+          // For new record - just show tags in UI temporarily
+          alert('提取到标签: ' + data.tags.join(', '));
+        } else {
+          await fetch('/api/records', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: recordId, tags: data.tags }),
+          });
+
+          setTodayRecords(todayRecords.map(r =>
+            r.id === recordId ? { ...r, tags: data.tags } : r
+          ));
+        }
+      } else {
+        alert('未能提取到标签，请重试');
       }
     } catch (error) {
       console.error('Failed to extract tags:', error);
