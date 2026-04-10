@@ -32,14 +32,16 @@ export default function RecordPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const storedDeviceId = localStorage.getItem('deviceId');
+    // Use a shared couple device ID
+    let storedDeviceId = localStorage.getItem('coupleDeviceId');
+
+    // If no shared ID exists, create one
     if (!storedDeviceId) {
-      const newDeviceId = 'device_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('deviceId', newDeviceId);
-      setDeviceId(newDeviceId);
-    } else {
-      setDeviceId(storedDeviceId);
+      // Use a fixed couple ID - in production you might want this to be configurable
+      storedDeviceId = 'couple_memory_001';
+      localStorage.setItem('coupleDeviceId', storedDeviceId);
     }
+    setDeviceId(storedDeviceId);
 
     const lastAuthor = localStorage.getItem('lastAuthor');
     if (lastAuthor) {

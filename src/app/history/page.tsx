@@ -33,14 +33,13 @@ export default function HistoryPage() {
   const [allRecords, setAllRecords] = useState<DayItem[]>([]);
 
   useEffect(() => {
-    const storedDeviceId = localStorage.getItem('deviceId');
+    // Use shared couple device ID
+    let storedDeviceId = localStorage.getItem('coupleDeviceId');
     if (!storedDeviceId) {
-      const newDeviceId = 'device_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('deviceId', newDeviceId);
-      setDeviceId(newDeviceId);
-    } else {
-      setDeviceId(storedDeviceId);
+      storedDeviceId = 'couple_memory_001';
+      localStorage.setItem('coupleDeviceId', storedDeviceId);
     }
+    setDeviceId(storedDeviceId);
   }, []);
 
   useEffect(() => {
