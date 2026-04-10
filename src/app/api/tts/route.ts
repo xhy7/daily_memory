@@ -10,10 +10,39 @@ let isInitialized = false;
 function getProjectRoot(): string {
   // Vercel 环境变量
   if (process.env.VERCEL) {
+    // 在 Vercel 环境中，根目录是 /var/task
     return '/var/task';
   }
-  // 本地开发
+  // 本地开发 - 使用项目根目录
   return process.cwd();
+}
+
+// 检查并列出 sounds 目录内容（调试用）
+async function debugSoundsDir() {
+  const projectRoot = getProjectRoot();
+  const soundsDir = path.join(projectRoot, 'sounds');
+  console.log('=== Debug Sounds Directory ===');
+  console.log('Project root:', projectRoot);
+  console.log('Sounds dir:', soundsDir);
+
+  try {
+    const exists = await fs.access(soundsDir).then(() => true).catch(() => false);
+    console.log('Sounds directory exists:', exists);
+
+    if (exists) {
+      const files = await fs.readdir(soundsDir);
+      console.log('Sounds directory contents:', files);
+
+      for (const file of files) {
+        const filePath = path.join(soundsDir, file);
+        const stats = await fs.stat(filePath);
+        console.log(`  ${file}: ${stats.size} bytes`);
+      }
+    }
+  } catch (e) {
+    console.error('Error reading sounds directory:', e);
+  }
+  console.log('=== End Debug ===');
 }
 
 // 初始化：从sounds文件夹读取音频文件并克隆
@@ -22,6 +51,9 @@ async function initializeVoices() {
     console.log('Voices already initialized, skipping...');
     return;
   }
+
+  // Debug: 列出 sounds 目录内容
+  await debugSoundsDir();
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
