@@ -124,7 +124,11 @@ export default function RecordPage() {
       console.log('AI tags response:', data);
 
       if (data.error) {
-        alert('提取标签失败: ' + (data.details || data.error));
+        // Show detailed error info including debug data
+        const errorMsg = data.details?.rawResponse
+          ? `提取标签失败: ${data.error}\n原始响应: ${data.details.rawResponse}`
+          : '提取标签失败: ' + (data.details || data.error);
+        alert(errorMsg);
         setExtracting(false);
         return;
       }

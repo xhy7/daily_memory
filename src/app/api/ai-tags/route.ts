@@ -14,23 +14,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Content or image is required' }, { status: 400 });
     }
 
-    // If there's content, use it directly
-    const textContent = content?.trim() || '无文字内容';
+    // Flexible prompt - let AI decide what tags are relevant
+    const textContent = content?.trim() || '';
+    const prompt = `请分析以下文字，提取几个能描述这条记录的关键词/标签。
 
-    // Build prompt for tag extraction
-    const prompt = `请分析以下文字内容，提取3-8个中文标签。
+文字内容：${textContent || '无'}
 
-文字内容：${textContent}
+要求：
+1. 根据内容自由提取标签，可以是：地点、活动、情感、人物、物品、主题、行动等任何有意义的关键词
+2. 标签数量：3-8个
+3. 标签格式：2-6个中文字符
+4. 只返回标签，不要解释
 
-请从以下类别中提取标签（每类最多1-2个标签）：
-- 地点（如：家、餐厅、公园、旅行目的地、城市）
-- 活动（如：约会、吃饭、逛街、旅行、看电影、购物）
-- 情感（如：甜蜜、开心、放松、浪漫、温暖）
-- 主题（如：生日、纪念日、日常、节日、周末）
-- 天气/时间（如：晴天、夜晚、周末、早上、夏天）
-- 其他（任何值得记录的标签）
+示例输出格式：
+["约会", "晚餐", "浪漫", "周末", "购物中心"]
 
-请只返回JSON数组格式的标签，不要任何其他文字。格式：["标签1", "标签2"]`;
+请直接输出JSON数组：`;
 
     // Use MiniMax API
     const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
@@ -52,48 +51,85 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
 
+    console.log('MiniMax API response status:', response.status);
+    console.log('MiniMax API response data:', JSON.stringify(data));
+
     if (!response.ok) {
       console.error('MiniMax API error:', response.status, data);
       return NextResponse.json({ error: 'API请求失败', details: data }, { status: 500 });
     }
 
     const responseText = data.choices?.[0]?.message?.content?.trim() || '';
+    console.log('AI response text:', responseText);
 
-    // Extract JSON array from response
+    // Extract tags with multiple fallback strategies
     let tags: string[] = [];
 
-    // First try direct JSON parse
+    // Strategy 1: Direct JSON parse
     try {
       const parsed = JSON.parse(responseText);
       if (Array.isArray(parsed)) {
-        tags = parsed.filter(t => typeof t === 'string');
+        tags = parsed.filter(t => typeof t === 'string' && t.length >= 1 && t.length <= 10);
       }
     } catch {
-      // If that fails, try to extract array from text
+      // Continue to next strategy
+    }
+
+    // Strategy 2: Extract from brackets
+    if (tags.length === 0) {
       const match = responseText.match(/\[[\s\S]*?\]/);
       if (match) {
         try {
           const extracted = JSON.parse(match[0]);
           if (Array.isArray(extracted)) {
-            tags = extracted.filter(t => typeof t === 'string');
+            tags = extracted.filter(t => typeof t === 'string' && t.length >= 1 && t.length <= 10);
           }
         } catch {
-          // Still failed, try one more approach - split by common separators
-          const cleanText = responseText.replace(/[\[\]【】]/g, '');
-          const parts = cleanText.split(/[,，、]/);
-          tags = parts.map(p => p.trim()).filter(p => p.length > 0 && p.length < 20);
+          // Continue
         }
       }
     }
 
-    // Ensure we have strings and limit to 8
-    tags = tags.filter(t => typeof t === 'string').slice(0, 8);
-
+    // Strategy 3: Split by common separators
     if (tags.length === 0) {
-      return NextResponse.json({ error: '未能解析出标签', rawResponse: responseText }, { status: 500 });
+      // Remove brackets and split
+      const cleanText = responseText.replace(/[\[\]【】""]/g, '');
+      const parts = cleanText.split(/[,，、\n]+/);
+      tags = parts
+        .map(p => p.trim())
+        .filter(p => p.length >= 1 && p.length <= 10);
     }
 
-    return NextResponse.json({ tags });
+    // Strategy 4: Extract any quoted strings
+    if (tags.length === 0) {
+      const quoted = responseText.match(/"([^"]+)"/g);
+      if (quoted) {
+        tags = quoted.map(q => q.replace(/"/g, '').trim());
+      }
+    }
+
+    // Ensure we have strings and limit to 8
+    tags = Array.from(new Set(tags)).filter(t => typeof t === 'string' && t.length > 0).slice(0, 8);
+
+    // If still no tags, create some based on content analysis
+    if (tags.length === 0 && textContent.length > 0) {
+      // Simple keyword extraction as fallback
+      const keywords = textContent
+        .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 2 && w.length <= 6)
+        .slice(0, 5);
+      tags = keywords;
+    }
+
+    // Return tags along with debug info
+    return NextResponse.json({
+      tags,
+      debug: {
+        rawResponse: responseText,
+        parsedCount: tags.length
+      }
+    });
   } catch (error) {
     console.error('Failed to extract tags:', error);
     return NextResponse.json({ error: '提取标签失败', details: String(error) }, { status: 500 });
