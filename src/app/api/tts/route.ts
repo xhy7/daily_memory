@@ -17,22 +17,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
-    // 根据 voiceType 选择声音
+    // 根据 voiceType 选择声音 - 使用文档中的有效 voice_id
     let selectedVoice = '';
     let voiceName = '';
 
     if (voiceType === 'his' || voiceType === 'male' || voiceType === '男') {
-      // 男声 - 随机选择一个
-      const maleVoices = ['male-qn-jingying', 'male-qn-jingyingsh', 'male-yujie', 'male-badao', 'male-weiboss'];
-      const randomIndex = Math.floor(Math.random() * maleVoices.length);
-      selectedVoice = maleVoices[randomIndex];
-      voiceName = '青年精英';
+      // 男声
+      selectedVoice = 'male-qn-qingse';
+      voiceName = '青春青年音';
     } else {
-      // 女声默认
-      const femaleVoices = ['female-shaonv', 'female-shaonvsh', 'female-yujie', 'female-weiboss', 'female-jingying'];
-      const randomIndex = Math.floor(Math.random() * femaleVoices.length);
-      selectedVoice = femaleVoices[randomIndex];
-      voiceName = '活泼少女';
+      // 女声
+      selectedVoice = 'female-shaonv';
+      voiceName = '少女音';
     }
 
     console.log('Selected voice:', selectedVoice);
