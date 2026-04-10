@@ -133,9 +133,12 @@ export default function RecordPage() {
         return;
       }
 
+      // 始终显示调试信息
+      const debugInfo = data.debug ? `\n(原始响应: ${data.debug.rawResponse || '无'})` : '';
+
       if (data.tags && data.tags.length > 0) {
         if (recordId === -1) {
-          alert('提取到标签: ' + data.tags.join(', '));
+          alert('提取到标签: ' + data.tags.join(', ') + debugInfo);
         } else {
           await fetch('/api/records', {
             method: 'PATCH',
@@ -148,7 +151,7 @@ export default function RecordPage() {
           ));
         }
       } else {
-        alert('未能提取到标签，请重试');
+        alert('未能提取到标签，请重试' + debugInfo);
       }
     } catch (error) {
       console.error('Failed to extract tags:', error);
