@@ -42,14 +42,10 @@ export async function POST(request: NextRequest) {
 
     // 检查 API 错误
     if (!response.ok || !data.choices || data.choices.length === 0) {
-      const errorMsg = data.base_resp?.status_msg || data.error?.message || '未知错误';
+      const errorMsg = data.base_resp?.status_msg || data.error?.message || 'API返回为空';
       return NextResponse.json({
-        error: 'API调用失败',
-        details: {
-          statusCode: response.status,
-          statusMsg: errorMsg,
-          fullResponse: JSON.stringify(data)
-        }
+        error: 'MiniMax API错误',
+        details: `状态码: ${response.status}, 错误: ${errorMsg}`
       }, { status: 500 });
     }
 

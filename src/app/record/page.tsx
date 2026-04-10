@@ -124,10 +124,20 @@ export default function RecordPage() {
       console.log('AI tags response:', data);
 
       if (data.error) {
-        // Show detailed error info including debug data
-        const errorMsg = data.details?.rawResponse
-          ? `提取标签失败: ${data.error}\n原始响应: ${data.details.rawResponse}`
-          : '提取标签失败: ' + (data.details || data.error);
+        // Show detailed error info - handle object details properly
+        let detailsStr = '';
+        if (data.details) {
+          if (typeof data.details === 'string') {
+            detailsStr = data.details;
+          } else if (data.details.fullResponse) {
+            detailsStr = data.details.fullResponse;
+          } else {
+            detailsStr = JSON.stringify(data.details);
+          }
+        }
+        const errorMsg = detailsStr
+          ? `提取标签失败: ${data.error}\n详细信息: ${detailsStr}`
+          : '提取标签失败: ' + data.error;
         alert(errorMsg);
         setExtracting(false);
         return;
