@@ -10,7 +10,6 @@ const getDirname = () => {
   if (typeof __dirname !== 'undefined') {
     return __dirname;
   }
-  // 兼容处理
   return path.dirname(fileURLToPath(import.meta.url));
 };
 
@@ -130,7 +129,6 @@ async function initializeVoices() {
         clearTimeout(timeoutId);
       } catch (fetchError: unknown) {
         console.error(`[${voice.type}] Upload fetch failed:`, fetchError);
-        // 详细捕获错误原因
         if (fetchError instanceof Error) {
           console.error(`[${voice.type}] Error name:`, fetchError.name);
           console.error(`[${voice.type}] Error message:`, fetchError.message);
@@ -172,7 +170,7 @@ async function initializeVoices() {
 
       console.log(`[${voice.type}] File uploaded, file_id: ${fileId}`);
 
-      // 2. 调用音色克隆接口
+      // 2. 调用音色克隆接口 - 使用 speech-2.8-hd 模型
       const voiceId = voice.type === 'his' ? 'his_voice' : 'her_voice';
       const sampleText = voice.type === 'his'
         ? '今天是我们在一起的第100天，我想对她说，我爱你。'
@@ -185,12 +183,11 @@ async function initializeVoices() {
 
       let cloneResponse;
       try {
-        console.log(`[${voice.type}] Clone URL: ${cloneUrl}`);
         console.log(`[${voice.type}] Clone request body:`, JSON.stringify({
           file_id: fileId,
           voice_id: voiceId,
           text: sampleText,
-          model: 'speech-2.8'
+          model: 'speech-2.8-hd'
         }));
 
         const controller = new AbortController();
@@ -206,7 +203,7 @@ async function initializeVoices() {
             file_id: fileId,
             voice_id: voiceId,
             text: sampleText,
-            model: 'speech-2.8'
+            model: 'speech-2.8-hd'
           }),
           signal: controller.signal
         });
@@ -229,13 +226,12 @@ async function initializeVoices() {
       if (contentType?.includes('application/json')) {
         cloneData = await cloneResponse.json();
       } else {
-        // 不是 JSON，可能是错误信息
         const errorText = await cloneResponse.text();
         console.error(`[${voice.type}] Clone response is not JSON:`, errorText);
         cloneData = { error: errorText };
       }
 
-      console.log(`[${voice.type}] Clone response:`, JSON.stringify(cloneData));
+      console.log(`[${voice.type}] Full clone response:`, JSON.stringify(cloneData));
 
       // 直接检查是否成功 - 音色克隆成功应该返回 voice_id
       const returnedVoiceId = cloneData.voice_id || cloneData.voiceId;
@@ -251,14 +247,13 @@ async function initializeVoices() {
         const statusCode = cloneData.status_code;
         const msg = cloneData.message || cloneData.msg;
 
-        console.log(`[${voice.type}] Full clone response:`, JSON.stringify(cloneData));
         console.log(`[${voice.type}] Error check - base_resp:`, baseResp);
         console.log(`[${voice.type}] Error check - error:`, errorObj);
         console.log(`[${voice.type}] Error check - code:`, directCode);
         console.log(`[${voice.type}] Error check - status_code:`, statusCode);
         console.log(`[${voice.type}] Error check - message:`, msg);
 
-        // 检查各种可能的错误 - 转换为字符串比较
+        // 检查各种可能的错误
         const errorCodeStr = String(baseResp?.status_code || errorObj?.code || directCode || statusCode || '');
         console.log(`[${voice.type}] Error code string:`, errorCodeStr);
 
@@ -266,9 +261,6 @@ async function initializeVoices() {
           console.error(`[${voice.type}] Insufficient balance! Voice clone failed.`);
         } else if (msg || errorObj || directCode) {
           console.error(`[${voice.type}] Clone failed with response:`, cloneData);
-        } else {
-          // 没有错误信息但也没有返回 voice_id，可能是克隆成功但格式不同
-          console.log(`[${voice.type}] No explicit error, checking if clone succeeded...`);
         }
       }
 
@@ -321,8 +313,12 @@ export async function POST(request: NextRequest) {
       selectedVoice = clonedVoices.his;
       console.log('Falling back to his cloned voice');
     } else {
-      // 使用默认音色
-      selectedVoice = voiceType === 'his' ? 'male-qn-jingying' : 'female-shaonv';
+      // 使用默认音色 - 根据 voiceType 选择
+      if (voiceType === 'his') {
+        selectedVoice = 'male-qn-jingying';
+      } else {
+        selectedVoice = 'female-shaonv';
+      }
       console.log('Using default voice:', selectedVoice);
     }
 
@@ -332,60 +328,129 @@ export async function POST(request: NextRequest) {
 
     console.log('TTS request:', { text: textContent, voiceId: selectedVoice });
 
-    // 调用 TTS API
-    let response;
+    // 调用 TTS API - 使用 speech-2.8-hd 模型
+    let audioBase64 = '';
+    let lastError = '';
+
+    // 尝试使用选中的声音
     try {
-      response = await fetch('https://api.minimax.chat/v1/t2a_v2', {
+      const response = await fetch('https://api.minimax.chat/v1/t2a_v2', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: 'speech-2.8',
+          model: 'speech-2.8-hd',
           text: textContent,
           voice_id: selectedVoice,
           speed: 1.0,
           format: 'mp3'
         })
       });
+
+      console.log('TTS response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('TTS response error:', errorText);
+        lastError = errorText;
+
+        // 如果选中的声音失败，尝试使用默认声音
+        if (selectedVoice !== 'male-qn-jingying' && selectedVoice !== 'female-shaonv') {
+          console.log('Trying with default voice...');
+          const defaultVoice = voiceType === 'his' ? 'male-qn-jingying' : 'female-shaonv';
+
+          const fallbackResponse = await fetch('https://api.minimax.chat/v1/t2a_v2', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: 'speech-2.8-hd',
+              text: textContent,
+              voice_id: defaultVoice,
+              speed: 1.0,
+              format: 'mp3'
+            })
+          });
+
+          if (fallbackResponse.ok) {
+            const contentType = fallbackResponse.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              const data = await fallbackResponse.json();
+              audioBase64 = data.data?.audio;
+            } else {
+              const audioBuffer = await fallbackResponse.arrayBuffer();
+              audioBase64 = Buffer.from(audioBuffer).toString('base64');
+            }
+            if (audioBase64) {
+              console.log('Fallback to default voice succeeded');
+              selectedVoice = defaultVoice;
+            }
+          }
+        }
+      } else {
+        // 处理响应
+        const contentType = response.headers.get('content-type') || '';
+        console.log('TTS response content-type:', contentType);
+
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          console.log('TTS JSON response:', JSON.stringify(data));
+          audioBase64 = data.data?.audio;
+        } else {
+          const audioBuffer = await response.arrayBuffer();
+          console.log('TTS audio buffer size:', audioBuffer.byteLength);
+          audioBase64 = Buffer.from(audioBuffer).toString('base64');
+        }
+      }
     } catch (fetchError: unknown) {
       console.error('TTS fetch failed:', fetchError);
-      const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-      return NextResponse.json({ error: 'TTS请求失败', details: errorMsg }, { status: 500 });
-    }
+      lastError = fetchError instanceof Error ? fetchError.message : String(fetchError);
 
-    console.log('TTS response status:', response.status);
+      // 如果出错，尝试使用默认声音
+      console.log('Trying with default voice after error...');
+      const defaultVoice = voiceType === 'his' ? 'male-qn-jingying' : 'female-shaonv';
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('TTS response error:', errorText);
       try {
-        const error = JSON.parse(errorText);
-        return NextResponse.json({ error: 'TTS失败', details: error }, { status: 500 });
-      } catch {
-        return NextResponse.json({ error: 'TTS失败', details: errorText }, { status: 500 });
+        const fallbackResponse = await fetch('https://api.minimax.chat/v1/t2a_v2', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: 'speech-2.8-hd',
+            text: textContent,
+            voice_id: defaultVoice,
+            speed: 1.0,
+            format: 'mp3'
+          })
+        });
+
+        if (fallbackResponse.ok) {
+          const contentType = fallbackResponse.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await fallbackResponse.json();
+            audioBase64 = data.data?.audio;
+          } else {
+            const audioBuffer = await fallbackResponse.arrayBuffer();
+            audioBase64 = Buffer.from(audioBuffer).toString('base64');
+          }
+          if (audioBase64) {
+            console.log('Fallback to default voice succeeded');
+            selectedVoice = defaultVoice;
+          }
+        }
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
       }
     }
 
-    // 处理响应
-    const contentType = response.headers.get('content-type') || '';
-    console.log('TTS response content-type:', contentType);
-
-    let audioBase64: string;
-
-    if (contentType.includes('application/json')) {
-      const data = await response.json();
-      console.log('TTS JSON response:', JSON.stringify(data));
-      audioBase64 = data.data?.audio;
-    } else {
-      const audioBuffer = await response.arrayBuffer();
-      console.log('TTS audio buffer size:', audioBuffer.byteLength);
-      audioBase64 = Buffer.from(audioBuffer).toString('base64');
-    }
-
     if (!audioBase64) {
-      return NextResponse.json({ error: '音频生成失败' }, { status: 500 });
+      return NextResponse.json({ error: '音频生成失败', details: lastError }, { status: 500 });
     }
 
     console.log('Audio generated successfully, length:', audioBase64.length);
