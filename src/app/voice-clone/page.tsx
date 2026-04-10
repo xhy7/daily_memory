@@ -175,7 +175,7 @@ export default function VoiceClonePage() {
                 </span>
                 <button
                   onClick={() => testVoice(voiceType)}
-                  disabled={testingVoice && testingVoice !== voiceType}
+                  disabled={testingVoice !== null && testingVoice !== voiceType}
                   className="px-4 py-2 bg-gradient-to-r from-pink-400 to-rose-400 text-white rounded-full text-sm hover:from-pink-500 hover:to-rose-500 disabled:opacity-50"
                 >
                   {testingVoice === voiceType ? '🔊 播放中...' : '🎧 试听'}
