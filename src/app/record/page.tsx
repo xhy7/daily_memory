@@ -65,7 +65,8 @@ export default function RecordPage() {
   }, [deviceId]);
 
   const fetchTodayRecords = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    // 使用本地时区获取今天的日期，避免 UTC 与本地时区差异
+    const today = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
     try {
       // 优化：只请求需要的字段
       const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}&fields=id,type,content,image_urls,tags,author,created_at`);

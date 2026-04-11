@@ -51,7 +51,8 @@ export default function HistoryPage() {
 
   useEffect(() => {
     if (deviceId && allRecords.length > 0 && !selectedDate) {
-      const today = new Date().toISOString().split('T')[0];
+      // 使用本地时区获取今天的日期
+      const today = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
       setSelectedDate(today);
       fetchDayRecords(today);
     }
@@ -65,11 +66,12 @@ export default function HistoryPage() {
 
       const grouped: { [key: string]: MemoryItem[] } = {};
       (data.records || []).forEach((record: MemoryItem) => {
-        const date = record.created_at.split('T')[0];
-        if (!grouped[date]) {
-          grouped[date] = [];
+        // 使用本地时区转换日期，避免 UTC 与本地时区差异导致日期偏差
+        const localDate = new Date(record.created_at).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
+        if (!grouped[localDate]) {
+          grouped[localDate] = [];
         }
-        grouped[date].push(record);
+        grouped[localDate].push(record);
       });
 
       const groupedArray: DayItem[] = Object.entries(grouped).map(([date, records]) => ({

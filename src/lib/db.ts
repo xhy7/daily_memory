@@ -158,10 +158,23 @@ export async function getMemoryRecordsByDevice(deviceId: string): Promise<Memory
 }
 
 export async function getMemoryRecordsByDate(deviceId: string, date: string): Promise<MemoryRecord[]> {
+  // 将本地日期转换为 UTC 时间范围进行查询
+  // 假设用户时区为 Asia/Shanghai (UTC+8)
+  // 将本地日期 00:00:00 转换为 UTC = 本地时间 - 8小时
+  // 如果本地日期是 4.11 00:00:00 Shanghai, 则是 4.10 16:00:00 UTC
+  // 需要查询 4.10 16:00:00 UTC 到 4.11 16:00:00 UTC 之间的记录
+  const [year, month, day] = date.split('-').map(Number);
+  const localStart = new Date(year, month - 1, day, 0, 0, 0);
+  const localEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+  // 转换为 UTC (减去8小时得到UTC)
+  const utcStart = new Date(localStart.getTime() - 8 * 60 * 60 * 1000);
+  const utcEnd = new Date(localEnd.getTime() - 8 * 60 * 60 * 1000 + 1000); // 加1秒确保包含整天
+
   const result = await sql`
     SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
     FROM records
-    WHERE device_id = ${deviceId} AND DATE(created_at) = ${date}
+    WHERE device_id = ${deviceId} AND created_at >= ${utcStart.toISOString()} AND created_at <= ${utcEnd.toISOString()}
     ORDER BY created_at DESC
   `;
   return result.rows.map(row => {
