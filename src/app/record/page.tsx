@@ -16,6 +16,8 @@ interface MemoryItem {
   image_urls?: string[];
   tags?: string[];
   author?: string;
+  is_completed?: boolean;
+  deadline?: string | null;
   created_at: string;
 }
 
@@ -32,6 +34,9 @@ export default function RecordPage() {
   const [uploading, setUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Todo-specific state
+  const [todoDeadline, setTodoDeadline] = useState<string>('');
 
   // Edit mode state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -73,7 +78,7 @@ export default function RecordPage() {
     const today = `${year}-${month}-${day}`;
     try {
       // 优化：只请求需要的字段
-      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}&fields=id,type,content,image_urls,tags,author,created_at`);
+      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}&fields=id,type,content,image_urls,tags,author,is_completed,deadline,created_at`);
       const data = await res.json();
       console.log('Fetched records:', data);
       setTodayRecords(data.records || []);
@@ -136,7 +141,9 @@ export default function RecordPage() {
           type: recordType,
           content,
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-          author
+          author,
+          isCompleted: false,
+          deadline: recordType === 'todo' && todoDeadline ? todoDeadline : null
         }),
       });
 
@@ -149,6 +156,7 @@ export default function RecordPage() {
       const newRecord = await res.json();
       setContent('');
       setImageUrls([]);
+      setTodoDeadline('');
       setTodayRecords([newRecord, ...todayRecords]);
     } catch (error) {
       console.error('Failed to create record:', error);
@@ -267,6 +275,68 @@ export default function RecordPage() {
     } catch (error) {
       console.error('Failed to remove tag:', error);
     }
+  };
+
+  // 切换待办完成状态
+  const handleToggleComplete = async (recordId: number, currentStatus: boolean) => {
+    try {
+      const res = await fetch('/api/records', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: recordId, isCompleted: !currentStatus }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert('更新失败: ' + (errorData.error || '未知错误'));
+        return;
+      }
+
+      setTodayRecords(todayRecords.map(r =>
+        r.id === recordId ? { ...r, is_completed: !currentStatus } : r
+      ));
+    } catch (error) {
+      console.error('Failed to toggle complete:', error);
+    }
+  };
+
+  // 更新待办截止时间
+  const handleUpdateDeadline = async (recordId: number, newDeadline: string) => {
+    try {
+      const res = await fetch('/api/records', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: recordId, deadline: newDeadline || null }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert('更新失败: ' + (errorData.error || '未知错误'));
+        return;
+      }
+
+      setTodayRecords(todayRecords.map(r =>
+        r.id === recordId ? { ...r, deadline: newDeadline || null } : r
+      ));
+    } catch (error) {
+      console.error('Failed to update deadline:', error);
+    }
+  };
+
+  // 检查待办是否超时
+  const isOverdue = (record: MemoryItem) => {
+    if (!record.deadline || record.is_completed) return false;
+    return new Date(record.deadline) < new Date();
+  };
+
+  // 格式化截止时间显示
+  const formatDeadline = (deadline: string) => {
+    const d = new Date(deadline);
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    const hours = d.getHours().toString().padStart(2, '0');
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    return `${month}月${day}日 ${hours}:${minutes}`;
   };
 
   const typeLabels: TypeMap = {
@@ -525,11 +595,35 @@ export default function RecordPage() {
           placeholder={
             recordType === 'sweet_interaction'
               ? '记录甜蜜互动：约会、礼物、小惊喜...'
+              : recordType === 'todo'
+              ? '写下你要完成的任务...'
               : '记录你的待办、感受或反思...'
           }
           className="w-full p-4 border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent bg-white"
           rows={4}
         />
+
+        {/* 截止时间输入 - 仅待办类型显示 */}
+        {recordType === 'todo' && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-blue-400">📅 截止时间：</span>
+            <input
+              type="datetime-local"
+              value={todoDeadline}
+              onChange={(e) => setTodoDeadline(e.target.value)}
+              className="flex-1 p-2 border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 text-sm"
+            />
+            {todoDeadline && (
+              <button
+                type="button"
+                onClick={() => setTodoDeadline('')}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                清除
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button
@@ -563,7 +657,7 @@ export default function RecordPage() {
           todayRecords.map((record) => (
             <div
               key={record.id}
-              className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${getTypeColor(record.type)} shadow-sm`}
+              className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${record.is_completed ? 'from-gray-100 to-gray-100 border-gray-400' : getTypeColor(record.type)} shadow-sm`}
             >
               {editingId === record.id ? (
                 // Edit mode
@@ -634,10 +728,23 @@ export default function RecordPage() {
                 <>
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
+                  {/* 待办完成复选框 */}
+                  {record.type === 'todo' && (
+                    <button
+                      onClick={() => handleToggleComplete(record.id, record.is_completed || false)}
+                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${
+                        record.is_completed
+                          ? 'bg-green-400 border-green-400 text-white'
+                          : 'border-gray-300 hover:border-green-400'
+                      }`}
+                    >
+                      {record.is_completed && '✓'}
+                    </button>
+                  )}
                   <span className={`px-2 py-1 rounded-full text-xs text-white ${getAuthorColor(record.author || 'her')}`}>
                     {record.author ? getAuthorLabel(record.author) : '她'}
                   </span>
-                  <span className="text-sm font-medium text-gray-600">
+                  <span className={`text-sm font-medium ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
                     {getTypeInfo(record.type).emoji} {getTypeInfo(record.type).label}
                   </span>
                 </div>
@@ -659,6 +766,25 @@ export default function RecordPage() {
                   </button>
                 </div>
               </div>
+
+              {/* 待办截止时间显示 */}
+              {record.type === 'todo' && record.deadline && (
+                <div className={`mb-2 text-sm flex items-center gap-2 ${
+                  isOverdue(record) ? 'text-red-500 font-semibold' : 'text-blue-500'
+                }`}>
+                  <span>📅</span>
+                  <span>截止：{formatDeadline(record.deadline)}</span>
+                  {isOverdue(record) && <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs">⚠️ 已超时</span>}
+                  {!record.is_completed && (
+                    <input
+                      type="datetime-local"
+                      defaultValue={record.deadline ? record.deadline.slice(0, 16) : ''}
+                      onChange={(e) => handleUpdateDeadline(record.id, e.target.value ? new Date(e.target.value).toISOString() : '')}
+                      className="ml-2 text-xs p-1 border border-gray-200 rounded"
+                    />
+                  )}
+                </div>
+              )}
 
               {/* Support both single image and multiple images with click to view */}
               {(record.image_url || record.image_urls) && (
@@ -683,7 +809,7 @@ export default function RecordPage() {
                 </div>
               )}
 
-              <p className="mb-2 text-gray-700">{record.content}</p>
+              <p className={`mb-2 ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{record.content}</p>
 
               {/* Tags Display */}
               {record.tags && record.tags.length > 0 && (

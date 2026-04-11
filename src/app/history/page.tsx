@@ -16,6 +16,8 @@ interface MemoryItem {
   image_urls?: string[];
   tags?: string[];
   author?: string;
+  is_completed?: boolean;
+  deadline?: string | null;
   created_at: string;
 }
 
@@ -65,7 +67,7 @@ export default function HistoryPage() {
   const fetchAllRecords = async () => {
     try {
       // 优化：只请求需要的字段，不获取图片
-      const res = await fetch(`/api/records?deviceId=${deviceId}&fields=id,type,content,polished_content,tags,author,created_at`);
+      const res = await fetch(`/api/records?deviceId=${deviceId}&fields=id,type,content,polished_content,tags,author,is_completed,deadline,created_at`);
       const data = await res.json();
 
       const grouped: { [key: string]: MemoryItem[] } = {};
@@ -98,7 +100,7 @@ export default function HistoryPage() {
   const fetchDayRecords = async (date: string) => {
     try {
       // 优化：只请求需要的字段
-      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${date}&fields=id,type,content,polished_content,image_urls,tags,author,created_at`);
+      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${date}&fields=id,type,content,polished_content,image_urls,tags,author,is_completed,deadline,created_at`);
       const data = await res.json();
       setDayRecords(data.records || []);
       setSelectedDate(date);
@@ -305,21 +307,36 @@ export default function HistoryPage() {
               {dayRecords.map((record) => (
                 <div
                   key={record.id}
-                  className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${getTypeColor(record.type)} shadow-sm`}
+                  className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${record.is_completed ? 'from-gray-100 to-gray-100 border-gray-400' : getTypeColor(record.type)} shadow-sm`}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">
                       <span className={`px-2 py-1 rounded-full text-xs text-white ${getAuthorColor(record.author || 'her')}`}>
                         {record.author ? getAuthorLabel(record.author) : '👧 她'}
                       </span>
-                      <span className="text-sm font-medium text-gray-600">
+                      <span className={`text-sm font-medium ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
                         {getTypeInfo(record.type).emoji} {getTypeInfo(record.type).label}
+                        {record.type === 'todo' && record.is_completed && ' ✓已完成'}
                       </span>
                     </div>
                     <span className="text-xs text-gray-400">
                       {new Date(record.created_at).toLocaleTimeString()}
                     </span>
                   </div>
+
+                  {/* 待办截止时间显示 */}
+                  {record.type === 'todo' && record.deadline && (
+                    <div className={`mb-2 text-sm flex items-center gap-2 ${
+                      record.is_completed ? 'text-gray-400' :
+                      new Date(record.deadline) < new Date() ? 'text-red-500 font-semibold' : 'text-blue-500'
+                    }`}>
+                      <span>📅</span>
+                      <span>截止：{new Date(record.deadline).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      {!record.is_completed && new Date(record.deadline) < new Date() && (
+                        <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs">⚠️ 已超时</span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Images with click to view */}
                   {getRecordImages(record).length > 0 && (
@@ -343,7 +360,7 @@ export default function HistoryPage() {
                     </div>
                   )}
 
-                  <p className="mb-2 text-gray-700">{record.content}</p>
+                  <p className={`mb-2 ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{record.content}</p>
 
                   {record.polished_content && (
                     <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-purple-700">

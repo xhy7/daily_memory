@@ -10,6 +10,8 @@ export interface MemoryRecord {
   image_urls?: string[];
   tags?: string[];
   author?: string;
+  is_completed?: boolean;
+  deadline?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -95,6 +97,20 @@ export async function initializeDatabase() {
     } catch (e) {
       console.log('Tags column already exists or error:', e);
     }
+
+    try {
+      await sql`ALTER TABLE records ADD COLUMN is_completed BOOLEAN DEFAULT FALSE`;
+      console.log('is_completed column added');
+    } catch (e) {
+      console.log('is_completed column already exists or error:', e);
+    }
+
+    try {
+      await sql`ALTER TABLE records ADD COLUMN deadline TIMESTAMP NULL`;
+      console.log('deadline column added');
+    } catch (e) {
+      console.log('deadline column already exists or error:', e);
+    }
   } catch (error) {
     console.error('Database initialization error:', error);
     throw error;
@@ -107,7 +123,9 @@ export async function createMemoryRecord(
   content: string,
   imageUrls?: string[] | string,
   author?: string,
-  tags?: string[]
+  tags?: string[],
+  isCompleted?: boolean,
+  deadline?: string | null
 ): Promise<MemoryRecord> {
   // Handle both single image and multiple images
   const imageUrl = Array.isArray(imageUrls) ? imageUrls[0] : (imageUrls || null);
@@ -116,9 +134,9 @@ export async function createMemoryRecord(
     : '[]';
 
   const result = await sql`
-    INSERT INTO records (device_id, type, content, image_url, image_urls, author, tags)
-    VALUES (${deviceId}, ${type}, ${content}, ${imageUrl}, ${imageUrlsJson}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'})
-    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
+    INSERT INTO records (device_id, type, content, image_url, image_urls, author, tags, is_completed, deadline)
+    VALUES (${deviceId}, ${type}, ${content}, ${imageUrl}, ${imageUrlsJson}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'}, ${isCompleted || false}, ${deadline || null})
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
   `;
 
   const row = result.rows[0];
@@ -137,7 +155,7 @@ export async function createMemoryRecord(
 
 export async function getMemoryRecordsByDevice(deviceId: string): Promise<MemoryRecord[]> {
   const result = await sql`
-    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
+    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
     FROM records
     WHERE device_id = ${deviceId}
     ORDER BY created_at DESC
@@ -172,7 +190,7 @@ export async function getMemoryRecordsByDate(deviceId: string, date: string): Pr
   const utcEnd = new Date(localEnd.getTime() - 8 * 60 * 60 * 1000 + 1000); // 加1秒确保包含整天
 
   const result = await sql`
-    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
+    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
     FROM records
     WHERE device_id = ${deviceId} AND created_at >= ${utcStart.toISOString()} AND created_at <= ${utcEnd.toISOString()}
     ORDER BY created_at DESC
@@ -199,7 +217,7 @@ export async function updateMemoryRecordPolishedContent(
     UPDATE records
     SET polished_content = ${polishedContent}, updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id}
-    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
   `;
   const row = result.rows[0];
   const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
@@ -222,7 +240,34 @@ export async function updateMemoryRecordTags(
     UPDATE records
     SET tags = ${JSON.stringify(tags)}, updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id}
-    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
+  `;
+  const row = result.rows[0];
+  const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
+  const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
+    ? imageUrlsParsed
+    : (row.image_url ? [row.image_url] : []);
+
+  return {
+    ...row,
+    image_urls: finalImageUrls,
+    tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
+  } as unknown as MemoryRecord;
+}
+
+// 更新待办的完成状态和截止时间
+export async function updateMemoryRecordTodo(
+  id: number,
+  isCompleted?: boolean,
+  deadline?: string | null
+): Promise<MemoryRecord> {
+  const result = await sql`
+    UPDATE records
+    SET is_completed = ${isCompleted !== undefined ? isCompleted : false},
+        deadline = ${deadline !== undefined ? deadline : null},
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ${id}
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
   `;
   const row = result.rows[0];
   const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
@@ -259,7 +304,7 @@ export async function updateMemoryRecord(
         image_urls = ${imageUrlsJson},
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id}
-    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, created_at, updated_at
+    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
   `;
   const row = result.rows[0];
   const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);

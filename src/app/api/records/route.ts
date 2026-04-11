@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, deleteMemoryRecord, updateMemoryRecord, initializeDatabase } from '@/lib/db';
+import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, updateMemoryRecordTodo, deleteMemoryRecord, updateMemoryRecord, initializeDatabase } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     await ensureDatabase();
 
     const body = await request.json();
-    const { deviceId, type, content, imageUrl, imageUrls, author } = body;
+    const { deviceId, type, content, imageUrl, imageUrls, author, isCompleted, deadline } = body;
 
     if (!deviceId || !type || !content) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     const finalImageUrls = imageUrls || (imageUrl ? [imageUrl] : undefined);
 
-    const record = await createMemoryRecord(deviceId, type, content, finalImageUrls, author);
+    const record = await createMemoryRecord(deviceId, type, content, finalImageUrls, author, undefined, isCompleted, deadline);
     return NextResponse.json(record);
   } catch (error) {
     console.error('Failed to create record:', error);
@@ -118,7 +118,7 @@ export async function PATCH(request: NextRequest) {
     await ensureDatabase();
 
     const body = await request.json();
-    const { id, polishedContent, tags, content, imageUrls } = body;
+    const { id, polishedContent, tags, content, imageUrls, isCompleted, deadline } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 });
@@ -134,8 +134,11 @@ export async function PATCH(request: NextRequest) {
       record = await updateMemoryRecordTags(id, tags);
     } else if (polishedContent) {
       record = await updateMemoryRecordPolishedContent(id, polishedContent);
+    } else if (isCompleted !== undefined || deadline !== undefined) {
+      // Update todo-specific fields (is_completed, deadline)
+      record = await updateMemoryRecordTodo(id, isCompleted, deadline);
     } else {
-      return NextResponse.json({ error: 'polishedContent, tags, or content is required' }, { status: 400 });
+      return NextResponse.json({ error: 'polishedContent, tags, isCompleted, deadline, or content is required' }, { status: 400 });
     }
 
     return NextResponse.json(record);
