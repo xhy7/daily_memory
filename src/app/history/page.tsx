@@ -51,8 +51,12 @@ export default function HistoryPage() {
 
   useEffect(() => {
     if (deviceId && allRecords.length > 0 && !selectedDate) {
-      // 使用本地时区获取今天的日期
-      const today = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
+      // 使用本地时区获取今天的日期，保持格式一致
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const today = `${year}-${month}-${day}`;
       setSelectedDate(today);
       fetchDayRecords(today);
     }
@@ -67,7 +71,11 @@ export default function HistoryPage() {
       const grouped: { [key: string]: MemoryItem[] } = {};
       (data.records || []).forEach((record: MemoryItem) => {
         // 使用本地时区转换日期，避免 UTC 与本地时区差异导致日期偏差
-        const localDate = new Date(record.created_at).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
+        const d = new Date(record.created_at);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const localDate = `${year}-${month}-${day}`;
         if (!grouped[localDate]) {
           grouped[localDate] = [];
         }
