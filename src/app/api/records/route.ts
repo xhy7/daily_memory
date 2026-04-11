@@ -16,8 +16,10 @@ async function ensureDatabase() {
       await initializeDatabase();
       dbInitialized = true;
     } catch (error) {
-      console.error('Failed to initialize database:', error);
-      throw error;
+      // 静默处理初始化错误，避免阻断 API
+      // 即使初始化失败，数据库表和列可能已经存在
+      console.error('Database initialization error (continuing anyway):', error);
+      dbInitialized = true; // 标记为已初始化，避免重复尝试
     }
   }
 }

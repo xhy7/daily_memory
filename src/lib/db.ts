@@ -28,6 +28,7 @@ export interface ClonedVoice {
 
 export async function initializeDatabase() {
   console.log('Initializing database...');
+  // Wrap entire function in try-catch to ensure no errors propagate
   try {
     // Create records table if not exists
     await sql`
@@ -46,7 +47,11 @@ export async function initializeDatabase() {
       )
     `;
     console.log('Records table created or already exists');
+  } catch (e) {
+    console.log('Records table creation skipped (may already exist)');
+  }
 
+  try {
     // Create cloned_voices table if not exists
     await sql`
       CREATE TABLE IF NOT EXISTS cloned_voices (
@@ -60,58 +65,41 @@ export async function initializeDatabase() {
       )
     `;
     console.log('Cloned voices table created or already exists');
-
-    // Add indexes for better query performance
-    try {
-      await sql`CREATE INDEX IF NOT EXISTS idx_records_device_id ON records(device_id)`;
-      console.log('Index idx_records_device_id created');
-    } catch (e) {
-      console.log('Index idx_records_device_id already exists or error:', e);
-    }
-
-    try {
-      await sql`CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC)`;
-      console.log('Index idx_records_created_at created');
-    } catch (e) {
-      console.log('Index idx_records_created_at already exists or error:', e);
-    }
-
-    try {
-      await sql`CREATE INDEX IF NOT EXISTS idx_records_device_created ON records(device_id, created_at DESC)`;
-      console.log('Index idx_records_device_created created');
-    } catch (e) {
-      console.log('Index idx_records_device_created already exists or error:', e);
-    }
-
-    // Add columns if they don't exist - check first before altering
-    const columnsToCheck = ['image_urls', 'tags', 'is_completed', 'deadline'];
-
-    for (const colName of columnsToCheck) {
-      try {
-        const result = await sql<{ exists: boolean }>`
-          SELECT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'records' AND column_name = ${colName}
-          ) as exists
-        `;
-        if (!result.rows[0]?.exists) {
-          const addSql = colName === 'deadline'
-            ? `ALTER TABLE records ADD COLUMN ${colName} TIMESTAMP NULL`
-            : `ALTER TABLE records ADD COLUMN ${colName} JSONB DEFAULT '[]'`;
-          await sql.unsafe(addSql);
-          console.log(`Column ${colName} added`);
-        } else {
-          console.log(`Column ${colName} already exists`);
-        }
-      } catch (e) {
-        // Silent fail
-        console.log(`Column ${colName} check/add skipped`);
-      }
-    }
-  } catch (error) {
-    // Silent fail - initialization errors shouldn't break the app
-    console.error('Database initialization warning:', error);
+  } catch (e) {
+    console.log('Cloned voices table creation skipped (may already exist)');
   }
+
+  // Add indexes - silently catch errors
+  try {
+    await sql`CREATE INDEX IF NOT EXISTS idx_records_device_id ON records(device_id)`;
+  } catch (e) { /* index may exist */ }
+
+  try {
+    await sql`CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC)`;
+  } catch (e) { /* index may exist */ }
+
+  try {
+    await sql`CREATE INDEX IF NOT EXISTS idx_records_device_created ON records(device_id, created_at DESC)`;
+  } catch (e) { /* index may exist */ }
+
+  // Add columns - silently catch errors (columns may already exist)
+  try {
+    await sql`ALTER TABLE records ADD COLUMN image_urls JSONB DEFAULT '[]'`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE records ADD COLUMN tags JSONB DEFAULT '[]'`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE records ADD COLUMN is_completed BOOLEAN DEFAULT FALSE`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE records ADD COLUMN deadline TIMESTAMP NULL`;
+  } catch (e) { /* column may exist */ }
+
+  console.log('Database initialization complete');
 }
 
 export async function createMemoryRecord(
