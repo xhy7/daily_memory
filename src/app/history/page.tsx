@@ -147,29 +147,27 @@ export default function HistoryPage() {
   // 根据记录数量获取渐变背景样式
   const getRecordGradientStyle = (day: number) => {
     const count = getRecordCount(day);
-    if (count === 0) return 'hover:bg-gray-50';
+    if (count === 0) return 'bg-white hover:bg-gray-50';
 
     // 记录数量对应渐变强度
     // 1-2条: 浅粉 -> 浅玫瑰
     // 3-5条: 中粉 -> 中玫瑰
     // 6+条: 深粉 -> 深玫瑰
-    let gradient: string;
     if (count <= 2) {
-      gradient = 'from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200';
+      return 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200';
     } else if (count <= 5) {
-      gradient = 'from-pink-200 to-rose-200 hover:from-pink-300 hover:to-rose-300';
+      return 'bg-gradient-to-br from-pink-200 to-rose-200 hover:from-pink-300 hover:to-rose-300';
     } else {
-      gradient = 'from-pink-300 to-rose-300 hover:from-pink-400 hover:to-rose-400';
+      return 'bg-gradient-to-br from-pink-300 to-rose-300 hover:from-pink-400 hover:to-rose-400';
     }
-    return gradient;
   };
 
-  // 获取文字颜色样式
+  // 获取文字颜色样式 - 确保在对应背景上有足够的对比度
   const getRecordTextStyle = (day: number) => {
     const count = getRecordCount(day);
     if (count === 0) return 'text-gray-600';
-    if (count <= 2) return 'text-pink-500 font-medium';
-    if (count <= 5) return 'text-pink-600 font-semibold';
+    if (count <= 2) return 'text-rose-600 font-semibold';
+    if (count <= 5) return 'text-rose-700 font-bold';
     return 'text-white font-bold';
   };
 
