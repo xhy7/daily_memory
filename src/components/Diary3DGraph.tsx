@@ -306,7 +306,6 @@ function GalaxyScene({
       {showConnections && connections.map((conn, i) => (
         <GalaxyConnection key={i} start={conn.start} end={conn.end} isHighlighted={conn.isHighlighted} />
       ))}
-      ))}
 
       {records.map((record, index) => (
         <GalaxyNode
