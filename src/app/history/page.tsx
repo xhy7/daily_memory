@@ -129,6 +129,42 @@ export default function HistoryPage() {
     return allRecords.some(dr => dr.date === dateStr);
   };
 
+  // 获取某天的记录数量
+  const getRecordCount = (day: number) => {
+    const dateStr = formatDate(day);
+    const dayItem = allRecords.find(dr => dr.date === dateStr);
+    return dayItem ? dayItem.records.length : 0;
+  };
+
+  // 根据记录数量获取渐变背景样式
+  const getRecordGradientStyle = (day: number) => {
+    const count = getRecordCount(day);
+    if (count === 0) return 'hover:bg-gray-50';
+
+    // 记录数量对应渐变强度
+    // 1-2条: 浅粉 -> 浅玫瑰
+    // 3-5条: 中粉 -> 中玫瑰
+    // 6+条: 深粉 -> 深玫瑰
+    let gradient: string;
+    if (count <= 2) {
+      gradient = 'from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200';
+    } else if (count <= 5) {
+      gradient = 'from-pink-200 to-rose-200 hover:from-pink-300 hover:to-rose-300';
+    } else {
+      gradient = 'from-pink-300 to-rose-300 hover:from-pink-400 hover:to-rose-400';
+    }
+    return gradient;
+  };
+
+  // 获取文字颜色样式
+  const getRecordTextStyle = (day: number) => {
+    const count = getRecordCount(day);
+    if (count === 0) return 'text-gray-600';
+    if (count <= 2) return 'text-pink-500 font-medium';
+    if (count <= 5) return 'text-pink-600 font-semibold';
+    return 'text-white font-bold';
+  };
+
   const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
   const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
   const days = getDaysInMonth(currentDate);
@@ -221,27 +257,28 @@ export default function HistoryPage() {
               {day}
             </div>
           ))}
-          {days.map((day, index) => (
-            <button
-              key={index}
-              onClick={() => day && fetchDayRecords(formatDate(day))}
-              disabled={!day}
-              className={`p-2 text-center rounded-xl transition relative ${
-                day && hasRecords(day)
-                  ? 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200'
-                  : 'hover:bg-gray-50'
-              } ${day && selectedDate === formatDate(day) ? 'ring-2 ring-pink-400' : ''}`}
-            >
-              <span className={day && hasRecords(day) ? 'text-pink-500 font-medium' : 'text-gray-600'}>
-                {day || ''}
-              </span>
-              {day && hasRecords(day) && (
-                <span className="absolute -bottom-0.5 left-1/2 transform -translate-x-1/2 text-xs">
-                  💕
+          {days.map((day, index) => {
+            const recordCount = day ? getRecordCount(day) : 0;
+            return (
+              <button
+                key={index}
+                onClick={() => day && fetchDayRecords(formatDate(day))}
+                disabled={!day}
+                className={`p-2 text-center rounded-xl transition relative ${
+                  day ? getRecordGradientStyle(day) : ''
+                } ${day && selectedDate === formatDate(day) ? 'ring-2 ring-pink-400' : ''}`}
+              >
+                <span className={day ? getRecordTextStyle(day) : 'text-gray-600'}>
+                  {day || ''}
                 </span>
-              )}
-            </button>
-          ))}
+                {day && recordCount > 0 && (
+                  <span className="absolute -bottom-0.5 left-1/2 transform -translate-x-1/2 text-xs">
+                    {recordCount <= 2 ? '💕' : recordCount <= 5 ? '💗' : '💖'}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
