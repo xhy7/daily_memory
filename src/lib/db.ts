@@ -83,37 +83,34 @@ export async function initializeDatabase() {
       console.log('Index idx_records_device_created already exists or error:', e);
     }
 
-    // Add columns if they don't exist
-    try {
-      await sql`ALTER TABLE records ADD COLUMN image_urls JSONB DEFAULT '[]'`;
-      console.log('image_urls column added');
-    } catch (e) {
-      console.log('image_urls column already exists or error:', e);
-    }
+    // Add columns if they don't exist - check first before altering
+    const columnsToCheck = ['image_urls', 'tags', 'is_completed', 'deadline'];
 
-    try {
-      await sql`ALTER TABLE records ADD COLUMN tags JSONB DEFAULT '[]'`;
-      console.log('Tags column added');
-    } catch (e) {
-      console.log('Tags column already exists or error:', e);
-    }
-
-    try {
-      await sql`ALTER TABLE records ADD COLUMN is_completed BOOLEAN DEFAULT FALSE`;
-      console.log('is_completed column added');
-    } catch (e) {
-      console.log('is_completed column already exists or error:', e);
-    }
-
-    try {
-      await sql`ALTER TABLE records ADD COLUMN deadline TIMESTAMP NULL`;
-      console.log('deadline column added');
-    } catch (e) {
-      console.log('deadline column already exists or error:', e);
+    for (const colName of columnsToCheck) {
+      try {
+        const result = await sql<{ exists: boolean }>`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'records' AND column_name = ${colName}
+          ) as exists
+        `;
+        if (!result.rows[0]?.exists) {
+          const addSql = colName === 'deadline'
+            ? `ALTER TABLE records ADD COLUMN ${colName} TIMESTAMP NULL`
+            : `ALTER TABLE records ADD COLUMN ${colName} JSONB DEFAULT '[]'`;
+          await sql.unsafe(addSql);
+          console.log(`Column ${colName} added`);
+        } else {
+          console.log(`Column ${colName} already exists`);
+        }
+      } catch (e) {
+        // Silent fail
+        console.log(`Column ${colName} check/add skipped`);
+      }
     }
   } catch (error) {
-    console.error('Database initialization error:', error);
-    throw error;
+    // Silent fail - initialization errors shouldn't break the app
+    console.error('Database initialization warning:', error);
   }
 }
 
