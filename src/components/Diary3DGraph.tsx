@@ -171,6 +171,27 @@ function GalaxyConnection({
   );
 }
 
+// 连接全部模式下的连接线 - 使用不同的颜色和样式
+function GalaxyConnectAllLine({
+  start,
+  end,
+}: {
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+}) {
+  const points = useMemo(() => [start, end], [start, end]);
+
+  return (
+    <Line
+      points={points}
+      color="#00ffff"
+      lineWidth={0.15}
+      transparent
+      opacity={0.12}
+    />
+  );
+}
+
 // 优化的星空背景 - 使用useMemo缓存
 function GalaxyStarField() {
   const starField = useMemo(() => {
@@ -215,12 +236,14 @@ function GalaxyScene({
   records,
   positions,
   selectedId,
-  onNodeClick
+  onNodeClick,
+  connectAll
 }: {
   records: GraphRecord[];
   positions: THREE.Vector3[];
   selectedId: number | null;
   onNodeClick: (record: GraphRecord) => void;
+  connectAll: boolean;
 }) {
   // 使用Map优化连接线计算
   const connections = useMemo(() => {
@@ -260,6 +283,25 @@ function GalaxyScene({
     return conns;
   }, [records, positions, selectedId]);
 
+  // 连接全部模式的额外连线 - 生成所有节点对之间的连线
+  const connectAllLines = useMemo(() => {
+    if (!connectAll || records.length < 2) return [];
+
+    const lines: { start: THREE.Vector3; end: THREE.Vector3; key: string }[] = [];
+
+    for (let i = 0; i < records.length; i++) {
+      for (let j = i + 1; j < records.length; j++) {
+        lines.push({
+          start: positions[i],
+          end: positions[j],
+          key: `${i}-${j}`
+        });
+      }
+    }
+
+    return lines;
+  }, [connectAll, records.length, positions]);
+
   return (
     <>
       <ambientLight intensity={0.3} />
@@ -270,6 +312,11 @@ function GalaxyScene({
 
       {connections.map((conn, i) => (
         <GalaxyConnection key={i} start={conn.start} end={conn.end} isHighlighted={conn.isHighlighted} />
+      ))}
+
+      {/* 连接全部模式的额外连线 */}
+      {connectAllLines.map((line, i) => (
+        <GalaxyConnectAllLine key={`connectall-${line.key}`} start={line.start} end={line.end} />
       ))}
 
       {records.map((record, index) => (
@@ -304,6 +351,7 @@ export default function Diary3DGraph({
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [connectAll, setConnectAll] = useState(false);
 
   // 预计算位置
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
@@ -385,6 +433,17 @@ export default function Diary3DGraph({
           className="w-full px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-sm">
           重置视图
         </button>
+
+        <button
+          onClick={() => setConnectAll(prev => !prev)}
+          className={`w-full px-4 py-2 rounded-lg text-sm transition ${
+            connectAll
+              ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
+              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+          }`}
+        >
+          {connectAll ? '🔗 取消连接全部' : '🔗 连接全部节点'}
+        </button>
       </div>
 
       {/* Stats */}
@@ -400,6 +459,7 @@ export default function Diary3DGraph({
           positions={filteredPositions}
           selectedId={selectedId}
           onNodeClick={handleNodeClick}
+          connectAll={connectAll}
         />
       </Canvas>
 
