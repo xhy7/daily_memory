@@ -148,7 +148,7 @@ function GalaxyNode({
   );
 }
 
-// 连接线 - 使用Line组件优化（相同tag的节点之间的连线）
+// 连接线 - 优化的发光连线效果
 function GalaxyConnection({
   start,
   end,
@@ -159,15 +159,47 @@ function GalaxyConnection({
   isHighlighted: boolean;
 }) {
   const points = useMemo(() => [start, end], [start, end]);
+  const midPoint = useMemo(() => {
+    return new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+  }, [start, end]);
+
+  // 发光核心颜色
+  const coreColor = isHighlighted ? '#ff69b4' : '#ce93d8';
+  // 外发光颜色
+  const glowColor = isHighlighted ? '#e91e63' : '#7b1fa2';
 
   return (
-    <Line
-      points={points}
-      color={isHighlighted ? '#ff69b4' : '#9c27b0'}
-      lineWidth={isHighlighted ? 2.5 : 1.2}
-      transparent
-      opacity={isHighlighted ? 0.8 : 0.45}
-    />
+    <group>
+      {/* 外发光层 - 更粗更透明 */}
+      <Line
+        points={points}
+        color={glowColor}
+        lineWidth={isHighlighted ? 4 : 2.5}
+        transparent
+        opacity={isHighlighted ? 0.25 : 0.12}
+      />
+      {/* 中层发光 */}
+      <Line
+        points={points}
+        color={coreColor}
+        lineWidth={isHighlighted ? 2 : 1}
+        transparent
+        opacity={isHighlighted ? 0.5 : 0.3}
+      />
+      {/* 核心亮线 */}
+      <Line
+        points={points}
+        color={isHighlighted ? '#ffffff' : '#e1bee7'}
+        lineWidth={isHighlighted ? 1 : 0.4}
+        transparent
+        opacity={isHighlighted ? 0.9 : 0.5}
+      />
+      {/* 中点发光球体 - 增强连接感 */}
+      <mesh position={midPoint}>
+        <sphereGeometry args={[isHighlighted ? 0.08 : 0.04, 8, 8]} />
+        <meshBasicMaterial color={coreColor} transparent opacity={isHighlighted ? 0.8 : 0.4} />
+      </mesh>
+    </group>
   );
 }
 
@@ -215,12 +247,14 @@ function GalaxyScene({
   records,
   positions,
   selectedId,
-  onNodeClick
+  onNodeClick,
+  showConnections
 }: {
   records: GraphRecord[];
   positions: THREE.Vector3[];
   selectedId: number | null;
   onNodeClick: (record: GraphRecord) => void;
+  showConnections: boolean;
 }) {
   // 使用Map优化连接线计算 - 连接所有具有相同tag的节点
   const connections = useMemo(() => {
@@ -268,8 +302,10 @@ function GalaxyScene({
 
       <GalaxyStarField />
 
-      {connections.map((conn, i) => (
+      {/* 只在 showConnections 为 true 时渲染连线 */}
+      {showConnections && connections.map((conn, i) => (
         <GalaxyConnection key={i} start={conn.start} end={conn.end} isHighlighted={conn.isHighlighted} />
+      ))}
       ))}
 
       {records.map((record, index) => (
@@ -304,6 +340,7 @@ export default function Diary3DGraph({
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showConnections, setShowConnections] = useState(true);
 
   // 预计算位置
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
@@ -385,6 +422,17 @@ export default function Diary3DGraph({
           className="w-full px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-sm">
           重置视图
         </button>
+
+        <button
+          onClick={() => setShowConnections(prev => !prev)}
+          className={`w-full px-4 py-2 rounded-lg text-sm transition ${
+            showConnections
+              ? 'bg-purple-600 hover:bg-purple-500 text-white'
+              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+          }`}
+        >
+          {showConnections ? '🔗 隐藏标签连线' : '🔗 显示标签连线'}
+        </button>
       </div>
 
       {/* Stats */}
@@ -400,6 +448,7 @@ export default function Diary3DGraph({
           positions={filteredPositions}
           selectedId={selectedId}
           onNodeClick={handleNodeClick}
+          showConnections={showConnections}
         />
       </Canvas>
 
