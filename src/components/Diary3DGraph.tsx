@@ -364,8 +364,8 @@ function GalaxyScene({
       <OrbitControls
         enableDamping
         dampingFactor={0.03}
-        minDistance={3}
-        maxDistance={25}
+        minDistance={2}
+        maxDistance={60}
         autoRotate={true}
         autoRotateSpeed={0.3}
       />
