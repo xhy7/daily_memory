@@ -22,8 +22,8 @@ interface Diary3DGraphProps {
   onTagClick?: (tag: string) => void;
 }
 
-// 预计算位置 - 使用稳定的随机种子
-function calculateGalaxyPositions(records: GraphRecord[], radius: number = 10) {
+// 预计算位置 - 使用对数螺旋分布解决节点重叠
+function calculateGalaxyPositions(records: GraphRecord[], radius: number = 12) {
   const positions: THREE.Vector3[] = [];
   const numRecords = records.length;
 
@@ -33,17 +33,25 @@ function calculateGalaxyPositions(records: GraphRecord[], radius: number = 10) {
     return x - Math.floor(x);
   };
 
+  // 对数螺旋参数 - 更高密度时分布更均匀
+  const spiralFactor = 0.15; // 对数螺旋增长因子
+
   for (let i = 0; i < numRecords; i++) {
     const seed = records[i].id || i;
-    const angle = (i / numRecords) * Math.PI * 4;
-    const spread = 0.3 + seededRandom(seed + 1) * 0.2;
-    const r = radius * (0.2 + (i / numRecords) * 0.8) * spread;
-    const verticalOffset = (seededRandom(seed + 2) - 0.5) * 3;
+    // 对数螺旋角度：角度随索引对数增长，避免线性螺旋在高密度时的聚集问题
+    const angle = (i / numRecords) * Math.PI * 20;
+    // 对数螺旋半径：使用对数函数使半径增长放缓，节点分布更均匀
+    const r = radius * Math.log(1 + i * spiralFactor);
+    // 更大的垂直分散系数，减少上下重叠
+    const verticalOffset = (seededRandom(seed + 2) - 0.5) * 4;
+    // 基于内容长度调整节点基础尺寸，减少小球被大球遮挡
+    const contentSize = Math.min((record.content?.length || 0) / 400, 0.5);
+    const sizeFactor = 1 - contentSize * 0.3; // 内容越长，相对位置偏移越小
 
     positions.push(new THREE.Vector3(
-      Math.cos(angle) * r + (seededRandom(seed + 3) - 0.5) * 1.5,
+      Math.cos(angle) * r + (seededRandom(seed + 3) - 0.5) * 2 * sizeFactor,
       verticalOffset,
-      Math.sin(angle) * r + (seededRandom(seed + 4) - 0.5) * 1.5
+      Math.sin(angle) * r + (seededRandom(seed + 4) - 0.5) * 2 * sizeFactor
     ));
   }
 
@@ -56,16 +64,18 @@ const AUTHOR_COLORS = {
   her: { core: '#ff69b4', glow: '#ffb6c1', halo: '#ff1493' }
 };
 
-// 优化的Galaxy Node - 减少几何体分段数
+// 优化的Galaxy Node - 减少几何体分段数，支持高亮关联节点
 function GalaxyNode({
   record,
   position,
   isSelected,
+  isRelated,
   onClick
 }: {
   record: GraphRecord;
   position: THREE.Vector3;
   isSelected: boolean;
+  isRelated: boolean;
   onClick: () => void;
 }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -75,6 +85,10 @@ function GalaxyNode({
   const authorColor = record.author === 'him' ? AUTHOR_COLORS.him : AUTHOR_COLORS.her;
   const baseSize = 0.25 + Math.min((record.content?.length || 0) / 400, 0.5);
   const size = hovered || isSelected ? baseSize * 1.5 : baseSize;
+
+  // 非选中且非关联节点降低透明度
+  const dimmed = !isSelected && !isRelated;
+  const opacity = dimmed ? 0.4 : 0.9;
 
   // 使用useMemo缓存几何体参数，减少重建
   const sphereArgs = useMemo(() => [size, 16, 16], [size]);
@@ -113,9 +127,9 @@ function GalaxyNode({
         <meshStandardMaterial
           color={authorColor.core}
           emissive={authorColor.core}
-          emissiveIntensity={hovered || isSelected ? 1.5 : 0.6}
+          emissiveIntensity={hovered || isSelected ? 1.5 : isRelated ? 1.0 : 0.6}
           transparent
-          opacity={0.9}
+          opacity={opacity}
           roughness={0.2}
           metalness={0.5}
         />
@@ -126,6 +140,14 @@ function GalaxyNode({
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <ringGeometry args={[size * 1.8, size * 2, 24]} />
           <meshBasicMaterial color={authorColor.glow} transparent opacity={0.3} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+
+      {/* 关联节点发光效果 */}
+      {isRelated && !isSelected && (
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[size * 1.5, size * 1.7, 24]} />
+          <meshBasicMaterial color="#e91e63" transparent opacity={0.4} side={THREE.DoubleSide} />
         </mesh>
       )}
 
@@ -242,7 +264,7 @@ function GalaxyStarField() {
   );
 }
 
-// 主3D场景 - 优化连接线计算
+// 主3D场景 - 优化连接线计算，支持关联节点高亮
 function GalaxyScene({
   records,
   positions,
@@ -256,6 +278,25 @@ function GalaxyScene({
   onNodeClick: (record: GraphRecord) => void;
   showConnections: boolean;
 }) {
+  // 计算关联节点ID集合（共享相同tag的节点）
+  const relatedIds = useMemo(() => {
+    if (!selectedId) return new Set<number>();
+
+    const selectedRecord = records.find(r => r.id === selectedId);
+    if (!selectedRecord || !selectedRecord.tags) return new Set<number>();
+
+    const related = new Set<number>();
+    records.forEach(record => {
+      if (record.id !== selectedId && record.tags) {
+        const hasCommonTag = record.tags.some(tag => selectedRecord.tags!.includes(tag));
+        if (hasCommonTag) {
+          related.add(record.id);
+        }
+      }
+    });
+    return related;
+  }, [records, selectedId]);
+
   // 使用Map优化连接线计算 - 连接所有具有相同tag的节点
   const connections = useMemo(() => {
     const conns: { start: THREE.Vector3; end: THREE.Vector3; isHighlighted: boolean }[] = [];
@@ -313,6 +354,7 @@ function GalaxyScene({
           record={record}
           position={positions[index]}
           isSelected={selectedId === record.id}
+          isRelated={relatedIds.has(record.id)}
           onClick={() => onNodeClick(record)}
         />
       ))}
@@ -340,6 +382,10 @@ export default function Diary3DGraph({
   const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showConnections, setShowConnections] = useState(true);
+  // 移动端筛选面板状态
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  // 详情抽屉状态
+  const [showDetailDrawer, setShowDetailDrawer] = useState(false);
 
   // 预计算位置
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
@@ -376,9 +422,13 @@ export default function Diary3DGraph({
   }, [filteredRecords, records, positions]);
 
   const handleNodeClick = useCallback((record: GraphRecord) => {
-    setSelectedId(prev => prev === record.id ? null : record.id);
+    const newSelectedId = selectedId === record.id ? null : record.id;
+    setSelectedId(newSelectedId);
+    if (newSelectedId) {
+      setShowDetailDrawer(false); // 重置详情抽屉状态，点击节点时只显示预览
+    }
     onNodeClick?.(record);
-  }, [onNodeClick]);
+  }, [selectedId, onNodeClick]);
 
   const handleTagClick = useCallback((tag: string) => {
     setSelectedTag(prev => prev === tag ? null : tag);
@@ -387,12 +437,87 @@ export default function Diary3DGraph({
 
   const selectedRecord = selectedId ? records.find(r => r.id === selectedId) : null;
 
+  // 计算选中节点的位置用于预览气泡
+  const selectedPosition = useMemo(() => {
+    if (!selectedId) return null;
+    const idx = filteredRecords.findIndex(r => r.id === selectedId);
+    return idx >= 0 ? filteredPositions[idx] : null;
+  }, [selectedId, filteredRecords, filteredPositions]);
+
   return (
     <div className="w-full h-screen relative" style={{
       background: 'radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f23 50%, #050510 100%)'
     }}>
-      {/* Controls */}
-      <div className="absolute top-4 left-4 z-10 space-y-3">
+      {/* 移动端 hamburger 按钮 */}
+      <button
+        className="md:hidden fixed top-4 left-4 z-40 p-2 bg-black/70 backdrop-blur-md rounded-lg text-white"
+        onClick={() => setIsFilterOpen(true)}
+      >
+        ☰
+      </button>
+
+      {/* 移动端筛选面板抽屉 */}
+      <div className={`md:hidden fixed top-0 left-0 h-full w-[280px] bg-gray-900/95 backdrop-blur-md z-30 transform transition-transform duration-300 ${isFilterOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {/* 抽屉头部 */}
+        <div className="flex justify-between items-center p-4 border-b border-gray-700">
+          <span className="text-white font-medium">筛选</span>
+          <button onClick={() => setIsFilterOpen(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
+        </div>
+
+        {/* 抽屉内容 */}
+        <div className="p-4 space-y-4">
+          <div className="bg-black/30 rounded-xl p-3">
+            <div className="text-xs text-gray-400 mb-2">时间筛选</div>
+            <div className="flex gap-1">
+              {(['7d', '30d', 'all'] as const).map(v => (
+                <button key={v} onClick={() => setTimeFilter(v)}
+                  className={`px-3 py-1 rounded-lg text-xs ${timeFilter === v ? 'bg-pink-500 text-white' : 'bg-gray-700 text-gray-300'}`}>
+                  {v === '7d' ? '7天' : v === '30d' ? '30天' : '全部'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-black/30 rounded-xl p-3">
+            <div className="text-xs text-gray-400 mb-2">标签筛选</div>
+            <div className="flex flex-wrap gap-1 max-h-[200px] overflow-y-auto">
+              {allTags.slice(0, 20).map(tag => (
+                <button key={tag} onClick={() => handleTagClick(tag)}
+                  className={`px-2 py-1 rounded-full text-xs ${selectedTag === tag ? 'bg-purple-500 text-white' : 'bg-purple-900/50 text-purple-300'}`}>
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={() => { setSelectedId(null); setSelectedTag(null); setTimeFilter('all'); setShowDetailDrawer(false); }}
+            className="w-full px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-sm">
+            重置视图
+          </button>
+
+          <button
+            onClick={() => setShowConnections(prev => !prev)}
+            className={`w-full px-4 py-2 rounded-lg text-sm transition ${
+              showConnections
+                ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+            }`}
+          >
+            {showConnections ? '🔗 隐藏标签连线' : '🔗 显示标签连线'}
+          </button>
+        </div>
+      </div>
+
+      {/* 移动端抽屉遮罩 */}
+      {isFilterOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/50 z-20"
+          onClick={() => setIsFilterOpen(false)}
+        />
+      )}
+
+      {/* 桌面端 Controls - 默认显示 */}
+      <div className="hidden md:block absolute top-4 left-4 z-10 space-y-3">
         <div className="bg-black/70 backdrop-blur-md rounded-xl p-3">
           <div className="text-xs text-gray-400 mb-2">时间筛选</div>
           <div className="flex gap-1">
@@ -417,7 +542,7 @@ export default function Diary3DGraph({
           </div>
         </div>
 
-        <button onClick={() => { setSelectedId(null); setSelectedTag(null); setTimeFilter('all'); }}
+        <button onClick={() => { setSelectedId(null); setSelectedTag(null); setTimeFilter('all'); setShowDetailDrawer(false); }}
           className="w-full px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-sm">
           重置视图
         </button>
@@ -440,65 +565,89 @@ export default function Diary3DGraph({
         <span className="text-purple-400 ml-2">{allTags.length}</span> 个标签
       </div>
 
-      {/* 3D Canvas */}
-      <Canvas camera={{ position: [0, 5, 15], fov: 60 }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
-        <GalaxyScene
-          records={filteredRecords}
-          positions={filteredPositions}
-          selectedId={selectedId}
-          onNodeClick={handleNodeClick}
-          showConnections={showConnections}
-        />
-      </Canvas>
+      {/* 3D Canvas - 根据是否显示详情抽屉调整宽度 */}
+      <div className={`absolute inset-0 transition-all duration-300 ${showDetailDrawer ? 'sm:right-[400px]' : ''}`}>
+        <Canvas camera={{ position: [0, 5, 15], fov: 60 }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+          <GalaxyScene
+            records={filteredRecords}
+            positions={filteredPositions}
+            selectedId={selectedId}
+            onNodeClick={handleNodeClick}
+            showConnections={showConnections}
+          />
 
-      {/* Detail Modal */}
-      {selectedRecord && (
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
-          <div className="bg-gray-900/95 backdrop-blur-md rounded-2xl p-6 max-w-sm w-full border border-pink-500/30 max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-start mb-3">
+          {/* 选中节点的预览气泡 */}
+          {selectedRecord && selectedPosition && !showDetailDrawer && (
+            <group position={selectedPosition}>
+              <Html position={[0, 1.5, 0]} center>
+                <div className="bg-black/90 backdrop-blur-md rounded-xl p-3 max-w-[200px] border border-pink-500/30">
+                  <div className="text-xs text-gray-400 mb-1">{selectedRecord.author === 'him' ? '👦 他' : '👧 她'}</div>
+                  <p className="text-white text-xs line-clamp-3">{selectedRecord.content}</p>
+                  <button
+                    onClick={() => setShowDetailDrawer(true)}
+                    className="mt-2 w-full px-3 py-1 bg-pink-500 text-white rounded-lg text-xs hover:bg-pink-400 transition"
+                  >
+                    查看详情 →
+                  </button>
+                </div>
+              </Html>
+            </group>
+          )}
+        </Canvas>
+      </div>
+
+      {/* 详情侧边抽屉 - 替代原来的居中Modal */}
+      <div className={`fixed right-0 top-0 h-full w-full sm:w-[400px] bg-gray-900/95 backdrop-blur-md z-30 transform transition-transform duration-300 ${showDetailDrawer ? 'translate-x-0' : 'translate-x-full'}`}>
+        {selectedRecord && (
+          <div className="h-full flex flex-col">
+            {/* 抽屉头部 */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-700">
               <div>
                 <div className="text-pink-400 text-sm">{new Date(selectedRecord.created_at).toLocaleString('zh-CN')}</div>
                 <span className={`px-2 py-1 rounded-full text-xs text-white mt-1 inline-block ${selectedRecord.author === 'him' ? 'bg-blue-500' : 'bg-rose-500'}`}>
                   {selectedRecord.author === 'him' ? '👦 他' : '👧 她'}
                 </span>
               </div>
-              <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
+              <button onClick={() => { setShowDetailDrawer(false); setSelectedId(null); }} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
 
-            {(selectedRecord.image_urls || selectedRecord.image_url) && (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {selectedRecord.image_urls?.map((url, idx) => (
-                  <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
-                    <img src={url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
-                      <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
-                    </div>
-                  </button>
-                )) || (selectedRecord.image_url && (
-                  <button onClick={() => setSelectedImage(selectedRecord.image_url!)} className="relative group">
-                    <img src={selectedRecord.image_url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
-                      <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* 抽屉内容 */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {(selectedRecord.image_urls || selectedRecord.image_url) && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {selectedRecord.image_urls?.map((url, idx) => (
+                    <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
+                      <img src={url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
+                      </div>
+                    </button>
+                  )) || (selectedRecord.image_url && (
+                    <button onClick={() => setSelectedImage(selectedRecord.image_url!)} className="relative group">
+                      <img src={selectedRecord.image_url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
 
-            <p className="text-white text-sm mb-3">{selectedRecord.content}</p>
+              <p className="text-white text-sm mb-3">{selectedRecord.content}</p>
 
-            {selectedRecord.tags && selectedRecord.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {selectedRecord.tags.map((tag, i) => (
-                  <button key={i} onClick={() => handleTagClick(tag)} className="px-2 py-1 bg-purple-900/50 text-purple-300 rounded-full text-xs">
-                    #{tag}
-                  </button>
-                ))}
-              </div>
-            )}
+              {selectedRecord.tags && selectedRecord.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {selectedRecord.tags.map((tag, i) => (
+                    <button key={i} onClick={() => handleTagClick(tag)} className="px-2 py-1 bg-purple-900/50 text-purple-300 rounded-full text-xs hover:bg-purple-800/50 transition">
+                      #{tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Image Lightbox */}
       {selectedImage && (
