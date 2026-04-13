@@ -192,35 +192,37 @@ function GalaxyConnection({
 
   return (
     <group>
-      {/* 外发光层 - 更粗更透明 */}
+      {/* 外发光层 - 非选中时极淡 */}
       <Line
         points={points}
         color={glowColor}
-        lineWidth={isHighlighted ? 4 : 2.5}
+        lineWidth={isHighlighted ? 3 : 1.5}
         transparent
-        opacity={isHighlighted ? 0.25 : 0.12}
+        opacity={isHighlighted ? 0.2 : 0.04}
       />
       {/* 中层发光 */}
       <Line
         points={points}
         color={coreColor}
-        lineWidth={isHighlighted ? 2 : 1}
+        lineWidth={isHighlighted ? 1.5 : 0.5}
         transparent
-        opacity={isHighlighted ? 0.5 : 0.3}
+        opacity={isHighlighted ? 0.4 : 0.08}
       />
-      {/* 核心亮线 */}
+      {/* 核心亮线 - 非选中时几乎不可见 */}
       <Line
         points={points}
         color={isHighlighted ? '#ffffff' : '#e1bee7'}
-        lineWidth={isHighlighted ? 1 : 0.4}
+        lineWidth={isHighlighted ? 0.8 : 0.2}
         transparent
-        opacity={isHighlighted ? 0.9 : 0.5}
+        opacity={isHighlighted ? 0.8 : 0.1}
       />
-      {/* 中点发光球体 - 增强连接感 */}
-      <mesh position={midPoint}>
-        <sphereGeometry args={[isHighlighted ? 0.08 : 0.04, 8, 8]} />
-        <meshBasicMaterial color={coreColor} transparent opacity={isHighlighted ? 0.8 : 0.4} />
-      </mesh>
+      {/* 中点发光球体 - 仅选中时显示 */}
+      {isHighlighted && (
+        <mesh position={midPoint}>
+          <sphereGeometry args={[0.06, 8, 8]} />
+          <meshBasicMaterial color={coreColor} transparent opacity={0.6} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -565,36 +567,38 @@ export default function Diary3DGraph({
         <span className="text-purple-400 ml-2">{allTags.length}</span> 个标签
       </div>
 
-      {/* 3D Canvas - 根据是否显示详情抽屉调整宽度 */}
-      <div className={`absolute inset-0 transition-all duration-300 ${showDetailDrawer ? 'sm:right-[400px]' : ''}`}>
-        <Canvas camera={{ position: [0, 5, 15], fov: 60 }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
-          <GalaxyScene
-            records={filteredRecords}
-            positions={filteredPositions}
-            selectedId={selectedId}
-            onNodeClick={handleNodeClick}
-            showConnections={showConnections}
-          />
+      {/* 3D Canvas - 全屏显示，不受侧边抽屉影响 */}
+      <Canvas
+        className={showDetailDrawer ? 'sm:!w-[calc(100%-400px)]' : ''}
+        camera={{ position: [0, 5, 15], fov: 60 }}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
+      >
+        <GalaxyScene
+          records={filteredRecords}
+          positions={filteredPositions}
+          selectedId={selectedId}
+          onNodeClick={handleNodeClick}
+          showConnections={showConnections}
+        />
 
-          {/* 选中节点的预览气泡 */}
-          {selectedRecord && selectedPosition && !showDetailDrawer && (
-            <group position={selectedPosition}>
-              <Html position={[0, 1.5, 0]} center>
-                <div className="bg-black/90 backdrop-blur-md rounded-xl p-3 max-w-[200px] border border-pink-500/30">
-                  <div className="text-xs text-gray-400 mb-1">{selectedRecord.author === 'him' ? '👦 他' : '👧 她'}</div>
-                  <p className="text-white text-xs line-clamp-3">{selectedRecord.content}</p>
-                  <button
-                    onClick={() => setShowDetailDrawer(true)}
-                    className="mt-2 w-full px-3 py-1 bg-pink-500 text-white rounded-lg text-xs hover:bg-pink-400 transition"
-                  >
-                    查看详情 →
-                  </button>
-                </div>
-              </Html>
-            </group>
-          )}
-        </Canvas>
-      </div>
+        {/* 选中节点的预览气泡 */}
+        {selectedRecord && selectedPosition && !showDetailDrawer && (
+          <group position={selectedPosition}>
+            <Html position={[0, 1.5, 0]} center>
+              <div className="bg-black/90 backdrop-blur-md rounded-xl p-3 max-w-[200px] border border-pink-500/30">
+                <div className="text-xs text-gray-400 mb-1">{selectedRecord.author === 'him' ? '👦 他' : '👧 她'}</div>
+                <p className="text-white text-xs line-clamp-3">{selectedRecord.content}</p>
+                <button
+                  onClick={() => setShowDetailDrawer(true)}
+                  className="mt-2 w-full px-3 py-1 bg-pink-500 text-white rounded-lg text-xs hover:bg-pink-400 transition"
+                >
+                  查看详情 →
+                </button>
+              </div>
+            </Html>
+          </group>
+        )}
+      </Canvas>
 
       {/* 详情侧边抽屉 - 替代原来的居中Modal */}
       <div className={`fixed right-0 top-0 h-full w-full sm:w-[400px] bg-gray-900/95 backdrop-blur-md z-30 transform transition-transform duration-300 ${showDetailDrawer ? 'translate-x-0' : 'translate-x-full'}`}>
