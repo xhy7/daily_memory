@@ -618,22 +618,42 @@ export default function Diary3DGraph({
             {/* 抽屉内容 */}
             <div className="flex-1 overflow-y-auto p-4">
               {(selectedRecord.image_urls || selectedRecord.image_url) && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedRecord.image_urls?.map((url, idx) => (
-                    <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
-                      <img src={url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
-                        <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
-                      </div>
-                    </button>
-                  )) || (selectedRecord.image_url && (
-                    <button onClick={() => setSelectedImage(selectedRecord.image_url!)} className="relative group">
-                      <img src={selectedRecord.image_url} alt="" className="w-full max-h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition rounded-lg flex items-center justify-center">
-                        <span className="opacity-0 group-hover:opacity-100 text-white text-xl">🔍</span>
-                      </div>
-                    </button>
-                  ))}
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+                    <span>📷</span> <span>{selectedRecord.image_urls?.length || 1} 张图片</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {selectedRecord.image_urls?.map((url, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setSelectedImage(url)}
+                        className="relative group w-full rounded-xl overflow-hidden"
+                      >
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-full max-h-48 object-cover cursor-pointer hover:opacity-90 transition"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 text-white text-2xl bg-black/50 rounded-full w-10 h-10 flex items-center justify-center">🔍</span>
+                        </div>
+                      </button>
+                    )) || (selectedRecord.image_url && (
+                      <button
+                        onClick={() => setSelectedImage(selectedRecord.image_url!)}
+                        className="relative group w-full rounded-xl overflow-hidden"
+                      >
+                        <img
+                          src={selectedRecord.image_url}
+                          alt=""
+                          className="w-full max-h-48 object-cover cursor-pointer hover:opacity-90 transition"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 text-white text-2xl bg-black/50 rounded-full w-10 h-10 flex items-center justify-center">🔍</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
