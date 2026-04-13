@@ -45,7 +45,7 @@ function calculateGalaxyPositions(records: GraphRecord[], radius: number = 12) {
     // 更大的垂直分散系数，减少上下重叠
     const verticalOffset = (seededRandom(seed + 2) - 0.5) * 4;
     // 基于内容长度调整节点基础尺寸，减少小球被大球遮挡
-    const contentSize = Math.min((record.content?.length || 0) / 400, 0.5);
+    const contentSize = Math.min((records[i].content?.length || 0) / 400, 0.5);
     const sizeFactor = 1 - contentSize * 0.3; // 内容越长，相对位置偏移越小
 
     positions.push(new THREE.Vector3(
