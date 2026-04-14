@@ -436,6 +436,28 @@ export async function getMemoryRecordsByDate(
   return queryMemoryRecords(deviceId, { ...options, date });
 }
 
+export async function getMemoryRecordById(
+  id: number,
+  options: Pick<MemoryRecordQueryOptions, 'fields'> = {}
+): Promise<MemoryRecord | null> {
+  const selectClause = buildSelectClause(options.fields);
+  const result = await sql.query(
+    `
+      SELECT ${selectClause}
+      FROM records
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return normalizeMemoryRecordRow(result.rows[0] as Record<string, unknown>);
+}
+
 export async function getMemoryRecordCalendarSummary(
   deviceId: string,
   month: string,

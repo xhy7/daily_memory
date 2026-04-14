@@ -33,8 +33,14 @@ interface UploadedImagePayload {
   pathname?: string;
 }
 
+interface TodayRecordsCacheEntry {
+  records: MemoryItem[];
+  hasMore: boolean;
+}
+
 const TODAY_RECORDS_CACHE_TTL_MS = 60 * 1000;
 const TODAY_RECORDS_CACHE_KEY_PREFIX = 'today-records';
+const TODAY_RECORDS_PAGE_SIZE = 20;
 const MAX_IMAGE_COUNT = 9;
 const MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
 const UPLOAD_CONCURRENCY = 3;
@@ -50,6 +56,30 @@ function getTodayCacheKey(currentDeviceId: string, date: string): string {
   return `${TODAY_RECORDS_CACHE_KEY_PREFIX}:${currentDeviceId}:${date}`;
 }
 
+function normalizeTodayRecordsCacheEntry(
+  value: TodayRecordsCacheEntry | MemoryItem[] | null
+): TodayRecordsCacheEntry | null {
+  if (!value) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      records: value,
+      hasMore: value.length >= TODAY_RECORDS_PAGE_SIZE,
+    };
+  }
+
+  if (Array.isArray(value.records)) {
+    return {
+      records: value.records,
+      hasMore: Boolean(value.hasMore),
+    };
+  }
+
+  return null;
+}
+
 export default function RecordPage() {
   const router = useRouter();
   const [deviceId, setDeviceId] = useState('');
@@ -59,7 +89,9 @@ export default function RecordPage() {
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [todayRecords, setTodayRecords] = useState<MemoryItem[]>([]);
+  const [todayRecordsHasMore, setTodayRecordsHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,19 +107,34 @@ export default function RecordPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [editUploading, setEditUploading] = useState(false);
   const recordsRequestRef = useRef<AbortController | null>(null);
+  const todayRecordsRef = useRef<MemoryItem[]>([]);
+  const todayRecordsHasMoreRef = useRef(false);
 
-  const syncTodayRecordsCache = (records: MemoryItem[], bumpVersion: boolean = false) => {
+  const setTodayRecordsHasMoreState = useCallback((value: boolean) => {
+    todayRecordsHasMoreRef.current = value;
+    setTodayRecordsHasMore(value);
+  }, []);
+
+  const syncTodayRecordsCache = useCallback((
+    records: MemoryItem[],
+    options: { bumpVersion?: boolean; hasMore?: boolean } = {}
+  ) => {
     if (!deviceId) {
       return;
     }
 
     const today = formatLocalDate(new Date());
-    const version = bumpVersion
+    const version = options.bumpVersion
       ? bumpRecordsDataVersion(deviceId)
       : getRecordsDataVersion(deviceId);
+    const hasMore = options.hasMore ?? todayRecordsHasMoreRef.current;
 
-    writeSessionCache(getTodayCacheKey(deviceId, today), records, version);
-  };
+    writeSessionCache<TodayRecordsCacheEntry>(
+      getTodayCacheKey(deviceId, today),
+      { records, hasMore },
+      version
+    );
+  }, [deviceId]);
 
   const updateTodayRecordsState = (
     updater: (records: MemoryItem[]) => MemoryItem[],
@@ -100,7 +147,8 @@ export default function RecordPage() {
 
     setTodayRecords((previousRecords) => {
       const nextRecords = updater(previousRecords);
-      syncTodayRecordsCache(nextRecords, bumpVersion);
+      todayRecordsRef.current = nextRecords;
+      syncTodayRecordsCache(nextRecords, { bumpVersion });
       return nextRecords;
     });
   };
@@ -172,7 +220,7 @@ export default function RecordPage() {
     };
   }, []);
 
-  const fetchTodayRecords = useCallback(async () => {
+  const fetchTodayRecordsLegacy = useCallback(async () => {
     // 使用本地时区获取今天的日期，保持格式一致 YYYY-MM-DD
     const today = formatLocalDate(new Date());
     const cacheKey = getTodayCacheKey(deviceId, today);
@@ -219,6 +267,71 @@ export default function RecordPage() {
       }
     }
   }, [deviceId]);
+
+  void fetchTodayRecordsLegacy;
+
+  const fetchTodayRecords = useCallback(async (options: { append?: boolean } = {}) => {
+    const append = options.append === true;
+    const today = formatLocalDate(new Date());
+    const cacheKey = getTodayCacheKey(deviceId, today);
+
+    if (!append) {
+      const cacheVersion = getRecordsDataVersion(deviceId);
+      const cachedRecords = normalizeTodayRecordsCacheEntry(readSessionCache<TodayRecordsCacheEntry | MemoryItem[]>(
+        cacheKey,
+        TODAY_RECORDS_CACHE_TTL_MS,
+        cacheVersion
+      ));
+
+      if (cachedRecords) {
+        todayRecordsRef.current = cachedRecords.records;
+        setTodayRecords(cachedRecords.records);
+        setTodayRecordsHasMoreState(cachedRecords.hasMore);
+        setLoading(false);
+      }
+    }
+
+    recordsRequestRef.current?.abort();
+    const controller = new AbortController();
+    recordsRequestRef.current = controller;
+
+    if (append) {
+      setLoadingMore(true);
+    }
+
+    try {
+      const res = await fetch(
+        `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${today}&limit=${TODAY_RECORDS_PAGE_SIZE}&offset=${append ? todayRecordsRef.current.length : 0}&includeTotal=0&fields=id,type,content,image_url,image_urls,tags,author,is_completed,deadline,created_at`,
+        { signal: controller.signal }
+      );
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch records: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const nextPage = (data.records || []) as MemoryItem[];
+      const nextRecords = append ? [...todayRecordsRef.current, ...nextPage] : nextPage;
+      const hasMore = Boolean(data.pagination?.hasMore);
+
+      todayRecordsRef.current = nextRecords;
+      setTodayRecords(nextRecords);
+      setTodayRecordsHasMoreState(hasMore);
+      syncTodayRecordsCache(nextRecords, { hasMore });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      console.error('Failed to fetch records:', error);
+    } finally {
+      if (recordsRequestRef.current === controller) {
+        recordsRequestRef.current = null;
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }, [deviceId, setTodayRecordsHasMoreState, syncTodayRecordsCache]);
 
   useEffect(() => {
     if (deviceId) {
@@ -884,7 +997,8 @@ export default function RecordPage() {
             <p>今天还没有记录哦~</p>
           </div>
         ) : (
-          todayRecords.map((record) => (
+          <>
+            {todayRecords.map((record) => (
             <div
               key={record.id}
               className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${record.is_completed ? 'from-gray-100 to-gray-100 border-gray-400' : getTypeColor(record.type)} shadow-sm`}
@@ -1094,7 +1208,18 @@ export default function RecordPage() {
                 </>
               )}
             </div>
-          ))
+          ))}
+            {todayRecordsHasMore && (
+              <button
+                type="button"
+                onClick={() => void fetchTodayRecords({ append: true })}
+                disabled={loadingMore}
+                className="w-full rounded-xl border border-pink-200 bg-white/90 px-4 py-3 text-sm font-medium text-pink-500 transition hover:bg-pink-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingMore ? 'Loading...' : 'Load more'}
+              </button>
+            )}
+          </>
         )}
       </div>
 

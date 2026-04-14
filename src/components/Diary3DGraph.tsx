@@ -9,17 +9,23 @@ import MemoryImage from '@/components/MemoryImage';
 export interface GraphRecord {
   id: number;
   content: string;
+  polished_content?: string;
   image_url?: string;
   image_urls?: string[];
   tags?: string[];
   author?: string;
+  is_completed?: boolean;
+  deadline?: string | null;
   created_at: string;
   type: string;
 }
 
 interface Diary3DGraphProps {
   records: GraphRecord[];
+  recordDetails?: Partial<Record<number, GraphRecord>>;
+  detailLoadingId?: number | null;
   onNodeClick?: (record: GraphRecord) => void;
+  onSelectionChange?: (recordId: number | null) => void;
   onTagClick?: (tag: string) => void;
 }
 
@@ -98,9 +104,13 @@ function GalaxyNode({
   const haloSegments = simplified ? 4 : (isSelected ? 12 : 8);
 
   // 使用useMemo缓存几何体参数，减少重建
-  const sphereArgs = useMemo(() => [size, 16, 16], [size]);
+  const shouldAnimate = hovered || isSelected || (!simplified && isRelated);
 
   useFrame((state) => {
+    if (!shouldAnimate) {
+      return;
+    }
+
     if (groupRef.current) {
       groupRef.current.rotation.y += 0.003;
       groupRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.05;
@@ -316,8 +326,8 @@ function GalaxyScene({
   }, [records, selectedId]);
 
   // 性能优化：节点数量过多时简化渲染
-  const isHighDensity = records.length > 50;
-  const isVeryHighDensity = records.length > 100;
+  const isHighDensity = records.length > 24;
+  const isVeryHighDensity = records.length > 60;
 
   // 使用Map优化连接线计算 - 连接所有具有相同tag的节点
   const connections = useMemo(() => {
@@ -448,7 +458,10 @@ function GalaxyScene({
 // 主组件
 export default function Diary3DGraph({
   records,
+  recordDetails,
+  detailLoadingId,
   onNodeClick,
+  onSelectionChange,
   onTagClick
 }: Diary3DGraphProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -503,15 +516,19 @@ export default function Diary3DGraph({
     if (newSelectedId) {
       setShowDetailDrawer(false); // 重置详情抽屉状态，点击节点时只显示预览
     }
+    onSelectionChange?.(newSelectedId);
     onNodeClick?.(record);
-  }, [selectedId, onNodeClick]);
+  }, [onNodeClick, onSelectionChange, selectedId]);
 
   const handleTagClick = useCallback((tag: string) => {
     setSelectedTag(prev => prev === tag ? null : tag);
     onTagClick?.(tag);
   }, [onTagClick]);
 
-  const selectedRecord = selectedId ? records.find(r => r.id === selectedId) : null;
+  const selectedRecordSummary = selectedId ? records.find(r => r.id === selectedId) : null;
+  const selectedRecord = selectedId
+    ? recordDetails?.[selectedId] ?? selectedRecordSummary ?? null
+    : null;
 
   // 计算选中节点的位置用于预览气泡
   const selectedPosition = useMemo(() => {
@@ -645,7 +662,8 @@ export default function Diary3DGraph({
       <Canvas
         className={showDetailDrawer ? 'sm:!w-[calc(100%-400px)]' : ''}
         camera={{ position: [0, 5, 15], fov: 60 }}
-        gl={{ antialias: true, powerPreference: 'high-performance' }}
+        dpr={filteredRecords.length > 120 ? [1, 1] : [1, 1.5]}
+        gl={{ antialias: filteredRecords.length < 90, powerPreference: 'high-performance' }}
       >
         <GalaxyScene
           records={filteredRecords}
@@ -693,6 +711,11 @@ export default function Diary3DGraph({
 
             {/* 抽屉内容 */}
             <div className="flex-1 overflow-y-auto p-4">
+              {detailLoadingId === selectedId && (
+                <div className="mb-3 rounded-xl border border-pink-500/20 bg-black/30 px-3 py-2 text-xs text-pink-200">
+                  Loading full details...
+                </div>
+              )}
               {(selectedRecord.image_urls || selectedRecord.image_url) && (
                 <div className="mb-4">
                   <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">

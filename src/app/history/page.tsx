@@ -32,10 +32,16 @@ interface DaySummary {
   count: number;
 }
 
+interface DayRecordsCacheEntry {
+  records: MemoryItem[];
+  hasMore: boolean;
+}
+
 const MONTH_SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
 const DAY_RECORDS_CACHE_TTL_MS = 60 * 1000;
 const MONTH_SUMMARY_CACHE_KEY_PREFIX = 'history-month-summary';
 const DAY_RECORDS_CACHE_KEY_PREFIX = 'history-day-records';
+const DAY_RECORDS_PAGE_SIZE = 20;
 
 const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
@@ -67,12 +73,14 @@ export default function HistoryPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dayRecords, setDayRecords] = useState<MemoryItem[]>([]);
+  const [dayRecordsHasMore, setDayRecordsHasMore] = useState(false);
   const [dayLoading, setDayLoading] = useState(false);
+  const [dayLoadingMore, setDayLoadingMore] = useState(false);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [monthSummary, setMonthSummary] = useState<Record<string, number>>({});
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const monthSummaryCacheRef = useRef(new Map<string, Record<string, number>>());
-  const dayRecordsCacheRef = useRef(new Map<string, MemoryItem[]>());
+  const dayRecordsCacheRef = useRef(new Map<string, DayRecordsCacheEntry>());
   const monthRequestRef = useRef<AbortController | null>(null);
   const dayRequestRef = useRef<AbortController | null>(null);
 
@@ -199,36 +207,54 @@ export default function HistoryPage() {
     }
   }, [buildMonthCacheKey, currentCacheVersion, deviceId, timezone]);
 
-  const fetchDayRecords = useCallback(async (date: string) => {
-    setSelectedDate(date);
+  const fetchDayRecords = useCallback(async (
+    date: string,
+    options: { append?: boolean } = {}
+  ) => {
+    const append = options.append === true;
     const cacheKey = buildDayCacheKey(date);
-    const cached = dayRecordsCacheRef.current.get(cacheKey);
-    if (cached) {
-      setDayRecords(cached);
-      setDayLoading(false);
-      return;
-    }
+    const currentOffset = append ? dayRecords.length : 0;
 
-    const cachedFromSession = readSessionCache<MemoryItem[]>(
-      cacheKey,
-      DAY_RECORDS_CACHE_TTL_MS,
-      currentCacheVersion
-    );
-    if (cachedFromSession) {
-      dayRecordsCacheRef.current.set(cacheKey, cachedFromSession);
-      setDayRecords(cachedFromSession);
-      setDayLoading(false);
-      return;
+    setSelectedDate(date);
+
+    if (!append) {
+      const cached = dayRecordsCacheRef.current.get(cacheKey);
+      if (cached) {
+        setDayRecords(cached.records);
+        setDayRecordsHasMore(cached.hasMore);
+        setDayLoading(false);
+        return;
+      }
+
+      const cachedFromSession = readSessionCache<DayRecordsCacheEntry>(
+        cacheKey,
+        DAY_RECORDS_CACHE_TTL_MS,
+        currentCacheVersion
+      );
+      if (cachedFromSession) {
+        dayRecordsCacheRef.current.set(cacheKey, cachedFromSession);
+        setDayRecords(cachedFromSession.records);
+        setDayRecordsHasMore(cachedFromSession.hasMore);
+        setDayLoading(false);
+        return;
+      }
     }
 
     dayRequestRef.current?.abort();
     const controller = new AbortController();
     dayRequestRef.current = controller;
-    setDayLoading(true);
+
+    if (append) {
+      setDayLoadingMore(true);
+    } else {
+      setDayLoading(true);
+      setDayRecords([]);
+      setDayRecordsHasMore(false);
+    }
 
     try {
       const res = await fetch(
-        `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${date}&timezone=${encodeURIComponent(timezone)}&limit=500&includeTotal=0&fields=id,type,content,polished_content,image_url,image_urls,tags,author,is_completed,deadline,created_at`,
+        `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${date}&timezone=${encodeURIComponent(timezone)}&limit=${DAY_RECORDS_PAGE_SIZE}&offset=${currentOffset}&includeTotal=0&fields=id,type,content,polished_content,image_url,image_urls,tags,author,is_completed,deadline,created_at`,
         { signal: controller.signal }
       );
       if (!res.ok) {
@@ -236,23 +262,35 @@ export default function HistoryPage() {
       }
 
       const data = await res.json();
-      const records = data.records || [];
-      dayRecordsCacheRef.current.set(cacheKey, records);
-      writeSessionCache(cacheKey, records, currentCacheVersion);
-      setDayRecords(records);
+      const nextPage = (data.records || []) as MemoryItem[];
+      const hasMore = Boolean(data.pagination?.hasMore);
+      const mergedRecords = append ? [...dayRecords, ...nextPage] : nextPage;
+      const cacheEntry: DayRecordsCacheEntry = {
+        records: mergedRecords,
+        hasMore,
+      };
+
+      dayRecordsCacheRef.current.set(cacheKey, cacheEntry);
+      writeSessionCache(cacheKey, cacheEntry, currentCacheVersion);
+      setDayRecords(mergedRecords);
+      setDayRecordsHasMore(hasMore);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;
       }
       console.error('Failed to fetch day records:', error);
-      setDayRecords([]);
+      if (!append) {
+        setDayRecords([]);
+        setDayRecordsHasMore(false);
+      }
     } finally {
       if (dayRequestRef.current === controller) {
         dayRequestRef.current = null;
         setDayLoading(false);
+        setDayLoadingMore(false);
       }
     }
-  }, [buildDayCacheKey, currentCacheVersion, deviceId, timezone]);
+  }, [buildDayCacheKey, currentCacheVersion, dayRecords, deviceId, timezone]);
 
   useEffect(() => {
     if (!deviceId) {
@@ -554,6 +592,17 @@ export default function HistoryPage() {
                   )}
                 </div>
               ))}
+
+              {dayRecordsHasMore && selectedDate && (
+                <button
+                  type="button"
+                  onClick={() => void fetchDayRecords(selectedDate, { append: true })}
+                  disabled={dayLoadingMore}
+                  className="w-full rounded-xl border border-pink-200 bg-white/90 px-4 py-3 text-sm font-medium text-pink-500 transition hover:bg-pink-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {dayLoadingMore ? 'Loading...' : 'Load more'}
+                </button>
+              )}
             </div>
           )}
         </div>

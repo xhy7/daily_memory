@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "images:audit": "node scripts/migrate-inline-images.mjs --limit 50",
+    "images:migrate": "node scripts/migrate-inline-images.mjs --apply --limit 20",
     "lint:strict": "eslint src --ext .ts,.tsx",
     "test": "jest"
   },

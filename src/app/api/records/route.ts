@@ -3,6 +3,7 @@ import {
   createMemoryRecord,
   deleteMemoryRecord,
   getMemoryRecordCalendarSummary,
+  getMemoryRecordById,
   getMemoryRecordsByDate,
   getMemoryRecordsByDevice,
   initializeDatabase,
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
     const summary = searchParams.get('summary');
     const month = searchParams.get('month');
     const date = searchParams.get('date');
+    const id = searchParams.get('id');
     const timezone = searchParams.get('timezone') || 'Asia/Shanghai';
     const limit = clampLimit(parsePositiveInt(searchParams.get('limit'), 100));
     const offset = clampOffset(parsePositiveInt(searchParams.get('offset'), 0));
@@ -120,8 +122,27 @@ export async function GET(request: NextRequest) {
     const includeTotal = parseBoolean(searchParams.get('includeTotal'), false);
     const requestedFields = parseRequestedFields(searchParams.get('fields'));
 
+    if (id) {
+      const recordId = Number.parseInt(id, 10);
+      if (Number.isNaN(recordId)) {
+        return NextResponse.json({ error: 'Invalid id format' }, { status: 400 });
+      }
+
+      const record = await getMemoryRecordById(recordId, {
+        fields: requestedFields,
+      });
+
+      if (!record) {
+        return NextResponse.json({ error: 'Record not found' }, { status: 404 });
+      }
+
+      const response = NextResponse.json({ record });
+      response.headers.set('Cache-Control', CACHE_CONTROL);
+      return response;
+    }
+
     if (!deviceId) {
-      return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
+      return NextResponse.json({ error: 'deviceId is required when id is not provided' }, { status: 400 });
     }
 
     if (summary === 'calendar') {
