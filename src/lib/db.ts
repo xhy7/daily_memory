@@ -212,12 +212,13 @@ export async function createMemoryRecord(
   } as unknown as MemoryRecord;
 }
 
-export async function getMemoryRecordsByDevice(deviceId: string): Promise<MemoryRecord[]> {
+export async function getMemoryRecordsByDevice(deviceId: string, limit: number = 500): Promise<MemoryRecord[]> {
   const result = await sql`
     SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
     FROM records
     WHERE device_id = ${deviceId}
     ORDER BY created_at DESC
+    LIMIT ${limit}
   `;
   // Parse JSON fields properly, handle backwards compatibility
   return result.rows.map(row => {
