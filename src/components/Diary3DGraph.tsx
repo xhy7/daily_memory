@@ -168,7 +168,7 @@ function GalaxyNode({
               {new Date(record.created_at).toLocaleDateString('zh-CN')}
             </div>
             <div className="flex flex-wrap gap-1 justify-center">
-              {record.tags.slice(0, 3).map((tag, i) => (
+              {(record.tags || []).slice(0, 3).map((tag, i) => (
                 <span key={i} className="text-purple-300 text-[10px]">#{tag}</span>
               ))}
             </div>
