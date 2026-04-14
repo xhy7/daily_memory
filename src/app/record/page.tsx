@@ -197,16 +197,22 @@ export default function RecordPage() {
   }, []);
 
   useEffect(() => {
-    // Use a shared couple device ID
+    // Get or create unique device ID for this device/browser
     let storedDeviceId = localStorage.getItem('coupleDeviceId');
 
-    // If no shared ID exists, create one
+    // If no ID exists, generate a unique one
     if (!storedDeviceId) {
-      // Use a fixed couple ID - in production you might want this to be configurable
-      storedDeviceId = 'couple_memory_001';
+      storedDeviceId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
       localStorage.setItem('coupleDeviceId', storedDeviceId);
     }
     setDeviceId(storedDeviceId);
+
+    // Initialize couple space
+    fetch('/api/couple-space', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: storedDeviceId }),
+    }).catch((err) => console.error('Failed to init couple space:', err));
 
     const lastAuthor = localStorage.getItem('lastAuthor');
     if (lastAuthor) {
@@ -361,7 +367,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('淇濆瓨澶辫触: ' + (errorData.error || '鏈煡閿欒'));
+        alert('保存失败: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -372,7 +378,7 @@ export default function RecordPage() {
       updateTodayRecordsState((records) => [newRecord, ...records], true);
     } catch (error) {
       console.error('Failed to create record:', error);
-      alert('淇濆瓨澶辫触锛岃绋嶅悗閲嶈瘯');
+      alert('保存失败锛岃绋嶅悗閲嶈瘯');
     }
   };
 
@@ -410,19 +416,19 @@ export default function RecordPage() {
           }
         }
         const errorMsg = detailsStr
-          ? `鎻愬彇鏍囩澶辫触: ${data.error}\n璇︾粏淇℃伅: ${detailsStr}`
-          : '鎻愬彇鏍囩澶辫触: ' + data.error;
+          ? `鎻愬彇鏍囩失败: ${data.error}\n详细信息: ${detailsStr}`
+          : '鎻愬彇鏍囩失败: ' + data.error;
         alert(errorMsg);
         setExtracting(false);
         return;
       }
 
-      // 濮嬬粓鏄剧ず璋冭瘯淇℃伅
+      // 
       const debugInfo = data.debug ? `\n(Raw response: ${data.debug.rawResponse || 'none'})` : '';
 
       if (data.tags && data.tags.length > 0) {
         if (recordId === -1) {
-          alert('鎻愬彇鍒版爣绛? ' + data.tags.join(', ') + debugInfo);
+          alert('提取到标签? ' + data.tags.join(', ') + debugInfo);
         } else {
           await fetch('/api/records', {
             method: 'PATCH',
@@ -442,7 +448,7 @@ export default function RecordPage() {
       }
     } catch (error) {
       console.error('Failed to extract tags:', error);
-      alert('鎻愬彇鏍囩澶辫触锛岃绋嶅悗閲嶈瘯');
+      alert('鎻愬彇鏍囩失败锛岃绋嶅悗閲嶈瘯');
     } finally {
       setExtracting(false);
     }
@@ -473,7 +479,7 @@ export default function RecordPage() {
     }
   };
 
-  // 鍒囨崲寰呭姙瀹屾垚鐘舵€?  const handleToggleComplete = async (recordId: number, currentStatus: boolean) => {
+  const handleToggleComplete = async (recordId: number, currentStatus: boolean) => {
     try {
       const res = await fetch('/api/records', {
         method: 'PATCH',
@@ -483,7 +489,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('鏇存柊澶辫触: ' + (errorData.error || '鏈煡閿欒'));
+        alert('更新失败: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -509,7 +515,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('鏇存柊澶辫触: ' + (errorData.error || '鏈煡閿欒'));
+        alert('更新失败: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -615,7 +621,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('淇濆瓨澶辫触: ' + (errorData.error || '鏈煡閿欒'));
+        alert('保存失败: ' + (errorData.error || '鏈煡閿欒'));
         setSavingEdit(false);
         return;
       }
@@ -634,7 +640,7 @@ export default function RecordPage() {
       setEditImages([]);
     } catch (error) {
       console.error('Failed to update record:', error);
-      alert('淇濆瓨澶辫触锛岃绋嶅悗閲嶈瘯');
+      alert('保存失败锛岃绋嶅悗閲嶈瘯');
     } finally {
       setSavingEdit(false);
     }
@@ -647,7 +653,7 @@ export default function RecordPage() {
       const res = await fetch(`/api/records?id=${recordId}`, { method: 'DELETE' });
       if (!res.ok) {
         const errorData = await res.json();
-        alert('鍒犻櫎澶辫触: ' + (errorData.error || '鏈煡閿欒'));
+        alert('删除失败: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -657,7 +663,7 @@ export default function RecordPage() {
       );
     } catch (error) {
       console.error('Failed to delete record:', error);
-      alert('鍒犻櫎澶辫触锛岃绋嶅悗閲嶈瘯');
+      alert('删除失败锛岃绋嶅悗閲嶈瘯');
     }
   };
 
@@ -1110,5 +1116,9 @@ export default function RecordPage() {
     </div>
   );
 }
+
+
+
+
 
 
