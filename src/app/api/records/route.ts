@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, updateMemoryRecordPolishedContent, updateMemoryRecordTags, updateMemoryRecordTodo, deleteMemoryRecord, updateMemoryRecord, initializeDatabase } from '@/lib/db';
+import { createMemoryRecord, getMemoryRecordsByDevice, getMemoryRecordsByDate, deleteMemoryRecord, updateMemoryRecord, initializeDatabase } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -120,27 +120,45 @@ export async function PATCH(request: NextRequest) {
     await ensureDatabase();
 
     const body = await request.json();
-    const { id, polishedContent, tags, content, imageUrls, isCompleted, deadline } = body;
+    const { id, polishedContent, tags, content, imageUrls, isCompleted, deadline, imageUrl } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 });
     }
 
-    let record;
-    if (content !== undefined || imageUrls !== undefined) {
-      // Full record update (content and/or images)
-      const newContent = content ?? '';
-      const newImageUrls = imageUrls ?? [];
-      record = await updateMemoryRecord(id, newContent, newImageUrls);
-    } else if (tags !== undefined) {
-      record = await updateMemoryRecordTags(id, tags);
-    } else if (polishedContent) {
-      record = await updateMemoryRecordPolishedContent(id, polishedContent);
-    } else if (isCompleted !== undefined || deadline !== undefined) {
-      // Update todo-specific fields (is_completed, deadline)
-      record = await updateMemoryRecordTodo(id, isCompleted, deadline);
-    } else {
-      return NextResponse.json({ error: 'polishedContent, tags, isCompleted, deadline, or content is required' }, { status: 400 });
+    // Build partial update object - only include fields that were provided
+    const updates: Parameters<typeof updateMemoryRecord>[1] = {};
+
+    if (polishedContent !== undefined) {
+      updates.polished_content = polishedContent;
+    }
+    if (tags !== undefined) {
+      updates.tags = tags;
+    }
+    if (content !== undefined) {
+      updates.content = content;
+    }
+    if (imageUrls !== undefined) {
+      updates.image_urls = imageUrls;
+    }
+    if (imageUrl !== undefined) {
+      updates.image_url = imageUrl;
+    }
+    if (isCompleted !== undefined) {
+      updates.is_completed = isCompleted;
+    }
+    if (deadline !== undefined) {
+      updates.deadline = deadline;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'At least one field must be provided' }, { status: 400 });
+    }
+
+    const record = await updateMemoryRecord(id, updates);
+
+    if (!record) {
+      return NextResponse.json({ error: 'Record not found' }, { status: 404 });
     }
 
     return NextResponse.json(record);
@@ -161,7 +179,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 });
     }
 
-    await deleteMemoryRecord(parseInt(id));
+    const recordId = parseInt(id, 10);
+    if (isNaN(recordId)) {
+      return NextResponse.json({ error: 'Invalid id format' }, { status: 400 });
+    }
+
+    await deleteMemoryRecord(recordId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Failed to delete record:', error);

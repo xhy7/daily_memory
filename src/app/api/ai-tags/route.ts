@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { chatWithAI } from '@/lib/ai';
+
+/**
+ * Escape special characters in user input to prevent prompt injection
+ */
+function escapeForPrompt(text: string): string {
+  if (!text) return '';
+  // Remove control characters and escape quotes that could break the prompt
+  return text
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/"/g, '\\"')            // Escape double quotes
+    .replace(/\n/g, ' ');            // Replace newlines with spaces
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
-    }
-
     const body = await request.json();
     const { content, imageUrl, existingTags } = body;
 
@@ -14,9 +22,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Content or image is required' }, { status: 400 });
     }
 
-    const textContent = content?.trim() || '';
-    const existingTagsStr = existingTags && existingTags.length > 0
-      ? `已有标签库：${existingTags.join('、')}。只选择与当前记录内容高度相关的标签！如果已有标签都不贴切，坚决不要选择它们，直接创建新标签！`
+    // Sanitize user input to prevent prompt injection
+    const textContent = escapeForPrompt(content?.trim() || '');
+    const sanitizedTags = Array.isArray(existingTags)
+      ? existingTags.map(t => escapeForPrompt(t)).filter(t => t.length > 0)
+      : [];
+
+    const existingTagsStr = sanitizedTags.length > 0
+      ? `已有标签库：${sanitizedTags.join('、')}。只选择与当前记录内容高度相关的标签！如果已有标签都不贴切，坚决不要选择它们，直接创建新标签！`
       : '暂无已有标签，请自行创建合适的标签。';
 
     // 根据 requirements.md 的要求设计提示词，优先考虑已有标签
@@ -54,75 +67,15 @@ export async function POST(request: NextRequest) {
 
 请直接输出JSON，不要有前缀或解释：`;
 
-    // 使用 MiniMax API
-    const model = 'MiniMax-M2.7';
-    const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.5
-      })
-    });
-
-    const data = await response.json();
-
-    console.log('MiniMax API status:', response.status);
-    console.log('MiniMax API response:', JSON.stringify(data));
-
-    // 检查 API 过载错误 (529)，添加重试逻辑
-    if (response.status === 529 || data.error?.type === 'overloaded_error') {
-      console.log('API overloaded, retrying after 2 seconds...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const retryResponse = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.5
-        })
-      });
-
-      const retryData = await retryResponse.json();
-      console.log('Retry response:', JSON.stringify(retryData));
-
-      if (retryResponse.ok && retryData.choices && retryData.choices.length > 0) {
-        const responseText = retryData.choices[0].message.content.trim();
-        let tags = parseTags(responseText);
-        if (tags.length === 0) {
-          tags = extractSemanticTags(textContent);
-        }
-        return NextResponse.json({
-          tags: tags.slice(0, 8),
-          debug: { rawResponse: responseText, parsedCount: tags.length }
-        });
-      }
+    let responseText: string;
+    try {
+      const result = await chatWithAI([{ role: 'user', content: prompt }]);
+      responseText = result.content;
+    } catch (error) {
+      // Fallback: try extract semantic tags from original content
+      responseText = '';
     }
 
-    // 检查其他 API 错误
-    if (!response.ok || !data.choices || data.choices.length === 0) {
-      const errorMsg = data.base_resp?.status_msg || data.error?.message || 'API返回为空';
-      return NextResponse.json({
-        error: 'MiniMax API错误',
-        details: `状态码: ${response.status}, 错误: ${errorMsg}`
-      }, { status: 500 });
-    }
-
-    const responseText = data.choices[0].message.content.trim();
     console.log('AI response text:', responseText);
 
     // 解析标签
@@ -147,8 +100,8 @@ export async function POST(request: NextRequest) {
       tags,
       debug: {
         rawResponse: responseText,
-        parsedCount: tags.length
-      }
+        parsedCount: tags.length,
+      },
     });
   } catch (error) {
     console.error('Failed to extract tags:', error);
@@ -159,6 +112,8 @@ export async function POST(request: NextRequest) {
 // 解析标签
 function parseTags(responseText: string): string[] {
   let tags: string[] = [];
+
+  if (!responseText) return tags;
 
   // 策略1: JSON 直接解析
   try {
@@ -176,7 +131,7 @@ function parseTags(responseText: string): string[] {
   // 策略2: 从各种括号中提取
   const patterns = [
     /"tags"\s*:\s*\[[\s\S]*?\]/,
-    /\[[\s\S]*?\]/g
+    /\[[\s\S]*?\]/g,
   ];
 
   for (const pattern of patterns) {
@@ -189,7 +144,7 @@ function parseTags(responseText: string): string[] {
           if (valid.length >= 3) return valid;
           if (valid.length > tags.length) tags = valid;
         }
-      } catch {}
+      } catch { /* continue */ }
     }
   }
 

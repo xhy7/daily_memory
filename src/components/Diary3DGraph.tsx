@@ -70,13 +70,15 @@ function GalaxyNode({
   position,
   isSelected,
   isRelated,
-  onClick
+  onClick,
+  simplified = false
 }: {
   record: GraphRecord;
   position: THREE.Vector3;
   isSelected: boolean;
   isRelated: boolean;
   onClick: () => void;
+  simplified?: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
@@ -89,6 +91,10 @@ function GalaxyNode({
   // 非选中且非关联节点降低透明度
   const dimmed = !isSelected && !isRelated;
   const opacity = dimmed ? 0.4 : 0.9;
+
+  // 高密度时简化几何体分段
+  const segments = simplified ? 8 : (isSelected ? 24 : 16);
+  const haloSegments = simplified ? 4 : (isSelected ? 12 : 8);
 
   // 使用useMemo缓存几何体参数，减少重建
   const sphereArgs = useMemo(() => [size, 16, 16], [size]);
@@ -104,10 +110,13 @@ function GalaxyNode({
     }
   });
 
+  // 悬停提示仅在非简化模式显示
+  const showTooltip = hovered && !simplified && record.tags && record.tags.length > 0;
+
   return (
     <group ref={groupRef} position={position}>
       {/* 简化的halo - 非选中时减少分段数 */}
-      <Sphere args={[size * 2, isSelected ? 16 : 8, isSelected ? 16 : 8]}>
+      <Sphere args={[size * 2, haloSegments, haloSegments]}>
         <meshBasicMaterial
           color={authorColor.glow}
           transparent
@@ -119,7 +128,7 @@ function GalaxyNode({
       {/* 核心球体 - 选中时增加细节 */}
       <Sphere
         ref={coreRef}
-        args={[size, isSelected ? 32 : 24, isSelected ? 32 : 24]}
+        args={[size, segments, segments]}
         onClick={(e) => { e.stopPropagation(); onClick(); }}
         onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
         onPointerOut={(e) => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
@@ -152,7 +161,7 @@ function GalaxyNode({
       )}
 
       {/* 悬停提示 - 简化渲染 */}
-      {hovered && record.tags && record.tags.length > 0 && (
+      {showTooltip && (
         <Html position={[0, size + 0.6, 0]} center>
           <div className="bg-black/90 text-white px-2 py-1 rounded-lg text-xs whitespace-nowrap pointer-events-none">
             <div className="text-pink-300 text-center mb-1">
@@ -227,10 +236,12 @@ function GalaxyConnection({
   );
 }
 
-// 优化的星空背景 - 使用useMemo缓存
-function GalaxyStarField() {
+// 优化的星空背景 - 使用useMemo缓存，支持高密度模式简化
+function GalaxyStarField({ highDensity = false }: { highDensity?: boolean }) {
+  const starCount = highDensity ? 500 : 1500;
+
   const starField = useMemo(() => {
-    const count = 1500; // 减少星星数量
+    const count = starCount;
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
 
@@ -253,7 +264,7 @@ function GalaxyStarField() {
       }
     }
     return { positions: pos, colors: col, count };
-  }, []);
+  }, [starCount]);
 
   return (
     <points>
@@ -261,7 +272,7 @@ function GalaxyStarField() {
         <bufferAttribute attach="attributes-position" count={starField.count} array={starField.positions} itemSize={3} />
         <bufferAttribute attach="attributes-color" count={starField.count} array={starField.colors} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial size={0.12} vertexColors transparent opacity={0.7} sizeAttenuation />
+      <pointsMaterial size={highDensity ? 0.08 : 0.12} vertexColors transparent opacity={highDensity ? 0.5 : 0.7} sizeAttenuation />
     </points>
   );
 }
@@ -272,13 +283,17 @@ function GalaxyScene({
   positions,
   selectedId,
   onNodeClick,
-  showConnections
+  showConnections,
+  controlsRef,
+  selectedPosition
 }: {
   records: GraphRecord[];
   positions: THREE.Vector3[];
   selectedId: number | null;
   onNodeClick: (record: GraphRecord) => void;
   showConnections: boolean;
+  controlsRef: React.RefObject<any>;
+  selectedPosition: THREE.Vector3 | null;
 }) {
   // 计算关联节点ID集合（共享相同tag的节点）
   const relatedIds = useMemo(() => {
@@ -299,8 +314,15 @@ function GalaxyScene({
     return related;
   }, [records, selectedId]);
 
+  // 性能优化：节点数量过多时简化渲染
+  const isHighDensity = records.length > 50;
+  const isVeryHighDensity = records.length > 100;
+
   // 使用Map优化连接线计算 - 连接所有具有相同tag的节点
   const connections = useMemo(() => {
+    // 高密度时只渲染高亮连接
+    if (isVeryHighDensity && selectedId === null) return [];
+
     const conns: { start: THREE.Vector3; end: THREE.Vector3; isHighlighted: boolean }[] = [];
     const tagToIndices = new Map<string, number[]>();
 
@@ -324,18 +346,65 @@ function GalaxyScene({
             processed.add(key);
             const isHighlighted = selectedId !== null &&
               (records[idx1].id === selectedId || records[idx2].id === selectedId);
-            conns.push({
-              start: positions[idx1],
-              end: positions[idx2],
-              isHighlighted
-            });
+            // 高密度时只渲染高亮连接
+            if (!isHighDensity || isHighlighted) {
+              conns.push({
+                start: positions[idx1],
+                end: positions[idx2],
+                isHighlighted
+              });
+            }
           }
         }
       }
     });
 
     return conns;
-  }, [records, positions, selectedId]);
+  }, [records, positions, selectedId, isHighDensity, isVeryHighDensity]);
+
+  // 相机聚焦动画
+  const cameraTarget = useRef({ x: 0, y: 5, z: 15 });
+  const prevSelectedId = useRef<number | null>(null);
+
+  useFrame((state) => {
+    // 当选中节点变化时，触发相机聚焦动画
+    if (selectedId !== prevSelectedId.current && selectedPosition && controlsRef.current) {
+      prevSelectedId.current = selectedId;
+
+      // 计算相机目标位置：在节点前方偏移
+      const distance = 8;
+      const targetX = selectedPosition.x;
+      const targetY = selectedPosition.y + 2;
+      const targetZ = selectedPosition.z + distance;
+
+      cameraTarget.current = { x: targetX, y: targetY, z: targetZ };
+
+      // 停止自动旋转，聚焦后恢复
+      controlsRef.current.autoRotate = false;
+    }
+
+    // 平滑移动相机到目标位置
+    if (controlsRef.current && selectedPosition) {
+      const controls = controlsRef.current;
+      const lerpFactor = 0.05;
+
+      controls.target.x += (selectedPosition.x - controls.target.x) * lerpFactor;
+      controls.target.y += (selectedPosition.y + 0.5 - controls.target.y) * lerpFactor;
+      controls.target.z += (selectedPosition.z - controls.target.z) * lerpFactor;
+
+      // 当没有选中时恢复自动旋转
+      if (!selectedId) {
+        const distToTarget = Math.sqrt(
+          Math.pow(state.camera.position.x - cameraTarget.current.x, 2) +
+          Math.pow(state.camera.position.y - cameraTarget.current.y, 2) +
+          Math.pow(state.camera.position.z - cameraTarget.current.z, 2)
+        );
+        if (distToTarget < 1) {
+          controls.autoRotate = true;
+        }
+      }
+    }
+  });
 
   return (
     <>
@@ -343,7 +412,7 @@ function GalaxyScene({
       <pointLight position={[0, 0, 0]} intensity={1} color="#ff69b4" />
       <pointLight position={[15, 15, 15]} intensity={0.5} color="#4169e1" />
 
-      <GalaxyStarField />
+      <GalaxyStarField highDensity={isHighDensity} />
 
       {/* 只在 showConnections 为 true 时渲染连线 */}
       {showConnections && connections.map((conn, i) => (
@@ -358,10 +427,12 @@ function GalaxyScene({
           isSelected={selectedId === record.id}
           isRelated={relatedIds.has(record.id)}
           onClick={() => onNodeClick(record)}
+          simplified={isHighDensity}
         />
       ))}
 
       <OrbitControls
+        ref={controlsRef}
         enableDamping
         dampingFactor={0.03}
         minDistance={2}
@@ -388,6 +459,8 @@ export default function Diary3DGraph({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   // 详情抽屉状态
   const [showDetailDrawer, setShowDetailDrawer] = useState(false);
+  // OrbitControls ref for camera animation
+  const controlsRef = useRef<any>(null);
 
   // 预计算位置
   const positions = useMemo(() => calculateGalaxyPositions(records), [records]);
@@ -579,6 +652,8 @@ export default function Diary3DGraph({
           selectedId={selectedId}
           onNodeClick={handleNodeClick}
           showConnections={showConnections}
+          controlsRef={controlsRef}
+          selectedPosition={selectedPosition}
         />
 
         {/* 选中节点的预览气泡 */}

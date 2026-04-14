@@ -1,18 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { chatWithAI } from '@/lib/ai';
+
+/**
+ * Escape special characters in user input to prevent prompt injection
+ */
+function escapeForPrompt(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, ' ');
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
-    }
-
     const body = await request.json();
     const { content, type } = body;
 
     if (!content) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
     }
+
+    // Sanitize user input to prevent prompt injection
+    const sanitizedContent = escapeForPrompt(content);
 
     const typePrompts: Record<string, string> = {
       todo: '请用简洁、清晰的语气重新表达这条待办事项，使其更具有行动导向。保持原意，但让它更加具体和可执行。',
@@ -23,34 +33,14 @@ export async function POST(request: NextRequest) {
 
     const promptType = type && typePrompts[type] ? typePrompts[type] : typePrompts.reflection;
 
-    // Use MiniMax API
-    const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+    const result = await chatWithAI([
+      {
+        role: 'user',
+        content: `${promptType}\n\n原始内容：${sanitizedContent}\n\n请直接给出润色后的内容，不要添加任何解释或前缀。`,
       },
-      body: JSON.stringify({
-        model: 'MiniMax-M2.7',
-        messages: [
-          {
-            role: 'user',
-            content: `${promptType}\n\n原始内容：${content}\n\n请直接给出润色后的内容，不要添加任何解释或前缀。`
-          }
-        ]
-      })
-    });
+    ]);
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('MiniMax API error:', response.status, data);
-      return NextResponse.json({ error: 'Failed to polish content', details: data }, { status: 500 });
-    }
-
-    const polished = data.choices?.[0]?.message?.content || content;
-
-    return NextResponse.json({ polished });
+    return NextResponse.json({ polished: result.content });
   } catch (error) {
     console.error('Failed to polish with AI:', error);
     return NextResponse.json({ error: 'Failed to polish content', details: String(error) }, { status: 500 });
