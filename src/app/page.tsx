@@ -73,7 +73,7 @@ export default function Home() {
         {/* Sweet quote */}
         <div className="mt-16 text-center px-8">
           <p className="text-pink-300 italic text-sm">
-            "和你在一起的每一天，都是最美好的回忆"
+            &ldquo;和你在一起的每一天，都是最美好的回忆&rdquo;
           </p>
         </div>
       </div>
