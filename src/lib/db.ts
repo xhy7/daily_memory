@@ -46,6 +46,215 @@ export interface MemoryRecord {
   updated_at: string;
 }
 
+export type MemoryRecordSelectField =
+  | 'id'
+  | 'device_id'
+  | 'couple_space_id'
+  | 'type'
+  | 'content'
+  | 'polished_content'
+  | 'image_url'
+  | 'image_urls'
+  | 'tags'
+  | 'author'
+  | 'is_completed'
+  | 'deadline'
+  | 'created_at'
+  | 'updated_at';
+
+export interface MemoryRecordQueryOptions {
+  fields?: MemoryRecordSelectField[];
+  limit?: number;
+  offset?: number;
+  recentDays?: number;
+  timezone?: string;
+  includeTotal?: boolean;
+}
+
+export interface MemoryRecordQueryResult {
+  records: MemoryRecord[];
+  total: number | null;
+  hasMore: boolean;
+}
+
+export interface CalendarDaySummary {
+  date: string;
+  count: number;
+}
+
+const DEFAULT_MEMORY_RECORD_FIELDS: MemoryRecordSelectField[] = [
+  'id',
+  'device_id',
+  'couple_space_id',
+  'type',
+  'content',
+  'polished_content',
+  'image_url',
+  'image_urls',
+  'tags',
+  'author',
+  'is_completed',
+  'deadline',
+  'created_at',
+  'updated_at',
+];
+
+const MEMORY_RECORD_COLUMN_MAP: Record<MemoryRecordSelectField, string> = {
+  id: 'id',
+  device_id: 'device_id',
+  couple_space_id: 'couple_space_id',
+  type: 'type',
+  content: 'content',
+  polished_content: 'polished_content',
+  image_url: 'image_url',
+  image_urls: 'image_urls',
+  tags: 'tags',
+  author: 'author',
+  is_completed: 'is_completed',
+  deadline: 'deadline',
+  created_at: 'created_at',
+  updated_at: 'updated_at',
+};
+
+function parseJsonArrayField(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string');
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function normalizeMemoryRecordRow(row: Record<string, unknown>): MemoryRecord {
+  const normalized: Record<string, unknown> = { ...row };
+
+  if ('image_urls' in row || 'image_url' in row) {
+    const parsedImageUrls = parseJsonArrayField(row.image_urls);
+    const fallbackImageUrls = typeof row.image_url === 'string' && row.image_url ? [row.image_url] : [];
+    normalized.image_urls = parsedImageUrls.length > 0 ? parsedImageUrls : fallbackImageUrls;
+  }
+
+  if ('tags' in row) {
+    normalized.tags = parseJsonArrayField(row.tags);
+  }
+
+  return normalized as unknown as MemoryRecord;
+}
+
+function sanitizeSelectedFields(fields?: MemoryRecordSelectField[]): MemoryRecordSelectField[] {
+  if (!fields || fields.length === 0) {
+    return DEFAULT_MEMORY_RECORD_FIELDS;
+  }
+
+  const seen = new Set<MemoryRecordSelectField>();
+  const sanitized: MemoryRecordSelectField[] = [];
+
+  for (const field of fields) {
+    if (!(field in MEMORY_RECORD_COLUMN_MAP) || seen.has(field)) {
+      continue;
+    }
+
+    seen.add(field);
+    sanitized.push(field);
+  }
+
+  return sanitized.length > 0 ? sanitized : DEFAULT_MEMORY_RECORD_FIELDS;
+}
+
+function buildSelectClause(fields?: MemoryRecordSelectField[]): string {
+  return sanitizeSelectedFields(fields)
+    .map((field) => MEMORY_RECORD_COLUMN_MAP[field])
+    .join(', ');
+}
+
+function clampLimit(limit: number | undefined): number {
+  if (typeof limit !== 'number' || Number.isNaN(limit)) {
+    return 100;
+  }
+
+  return Math.max(1, Math.min(limit, 500));
+}
+
+function clampOffset(offset: number | undefined): number {
+  if (typeof offset !== 'number' || Number.isNaN(offset)) {
+    return 0;
+  }
+
+  return Math.max(0, offset);
+}
+
+async function queryMemoryRecords(
+  deviceId: string,
+  options: MemoryRecordQueryOptions & { date?: string } = {}
+): Promise<MemoryRecordQueryResult> {
+  const { localDateToUTC } = await import('./datetime');
+
+  const whereParts: string[] = ['device_id = $1'];
+  const whereValues: Array<string | number> = [deviceId];
+  let nextParamIndex = 2;
+
+  if (options.date) {
+    const { start, end } = localDateToUTC(options.date, options.timezone || 'Asia/Shanghai');
+    whereParts.push(`created_at >= $${nextParamIndex++}`);
+    whereValues.push(start.toISOString());
+    whereParts.push(`created_at <= $${nextParamIndex++}`);
+    whereValues.push(end.toISOString());
+  }
+
+  if (typeof options.recentDays === 'number' && options.recentDays > 0) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - options.recentDays);
+    whereParts.push(`created_at >= $${nextParamIndex++}`);
+    whereValues.push(cutoff.toISOString());
+  }
+
+  const selectClause = buildSelectClause(options.fields);
+  const limit = clampLimit(options.limit);
+  const offset = clampOffset(options.offset);
+  const pageSize = options.includeTotal ? limit : limit + 1;
+  const whereClause = whereParts.join(' AND ');
+
+  const dataQuery = `
+    SELECT ${selectClause}
+    FROM records
+    WHERE ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT $${nextParamIndex} OFFSET $${nextParamIndex + 1}
+  `;
+  const dataResultPromise = sql.query(dataQuery, [...whereValues, pageSize, offset]);
+  const countResultPromise = options.includeTotal
+    ? sql.query(
+        `
+          SELECT COUNT(*)::int AS total
+          FROM records
+          WHERE ${whereClause}
+        `,
+        whereValues
+      )
+    : null;
+
+  const dataResult = await dataResultPromise;
+  const hasMore = dataResult.rows.length > limit;
+  const visibleRows = hasMore ? dataResult.rows.slice(0, limit) : dataResult.rows;
+  const countResult = countResultPromise ? await countResultPromise : null;
+
+  return {
+    records: visibleRows.map((row) => normalizeMemoryRecordRow(row as Record<string, unknown>)),
+    total: countResult ? Number(countResult.rows[0]?.total || 0) : null,
+    hasMore,
+  };
+}
+
 export async function initializeDatabase() {
   console.log('Initializing database...');
   // Wrap entire function in try-catch to ensure no errors propagate
@@ -212,51 +421,48 @@ export async function createMemoryRecord(
   } as unknown as MemoryRecord;
 }
 
-export async function getMemoryRecordsByDevice(deviceId: string, limit: number = 500): Promise<MemoryRecord[]> {
-  const result = await sql`
-    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
-    FROM records
-    WHERE device_id = ${deviceId}
-    ORDER BY created_at DESC
-    LIMIT ${limit}
-  `;
-  // Parse JSON fields properly, handle backwards compatibility
-  return result.rows.map(row => {
-    const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
-    const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
-      ? imageUrlsParsed
-      : (row.image_url ? [row.image_url] : []);
-
-    return {
-      ...row,
-      image_urls: finalImageUrls,
-      tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
-    };
-  }) as unknown as MemoryRecord[];
+export async function getMemoryRecordsByDevice(
+  deviceId: string,
+  options: MemoryRecordQueryOptions = {}
+): Promise<MemoryRecordQueryResult> {
+  return queryMemoryRecords(deviceId, options);
 }
 
-export async function getMemoryRecordsByDate(deviceId: string, date: string): Promise<MemoryRecord[]> {
-  const { localDateToUTC } = await import('./datetime');
-  const { start, end } = localDateToUTC(date);
+export async function getMemoryRecordsByDate(
+  deviceId: string,
+  date: string,
+  options: MemoryRecordQueryOptions = {}
+): Promise<MemoryRecordQueryResult> {
+  return queryMemoryRecords(deviceId, { ...options, date });
+}
 
-  const result = await sql`
-    SELECT id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
-    FROM records
-    WHERE device_id = ${deviceId} AND created_at >= ${start.toISOString()} AND created_at <= ${end.toISOString()}
-    ORDER BY created_at DESC
-  `;
-  return result.rows.map(row => {
-    const imageUrlsParsed = typeof row.image_urls === 'string' ? JSON.parse(row.image_urls) : (row.image_urls || []);
-    const finalImageUrls = Array.isArray(imageUrlsParsed) && imageUrlsParsed.length > 0
-      ? imageUrlsParsed
-      : (row.image_url ? [row.image_url] : []);
+export async function getMemoryRecordCalendarSummary(
+  deviceId: string,
+  month: string,
+  timezone: string = 'Asia/Shanghai'
+): Promise<CalendarDaySummary[]> {
+  const { localMonthToUTC } = await import('./datetime');
+  const { start, end } = localMonthToUTC(month, timezone);
 
-    return {
-      ...row,
-      image_urls: finalImageUrls,
-      tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || [])
-    };
-  }) as unknown as MemoryRecord[];
+  const result = await sql.query(
+    `
+      SELECT
+        TO_CHAR((created_at AT TIME ZONE 'UTC' AT TIME ZONE $4), 'YYYY-MM-DD') AS date,
+        COUNT(*)::int AS count
+      FROM records
+      WHERE device_id = $1
+        AND created_at >= $2
+        AND created_at <= $3
+      GROUP BY 1
+      ORDER BY 1 DESC
+    `,
+    [deviceId, start.toISOString(), end.toISOString(), timezone]
+  );
+
+  return result.rows.map((row) => ({
+    date: String(row.date),
+    count: Number(row.count),
+  }));
 }
 
 export async function updateMemoryRecordPolishedContent(

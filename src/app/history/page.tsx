@@ -1,7 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import MemoryImage from '@/components/MemoryImage';
+import {
+  getRecordsDataVersion,
+  readSessionCache,
+  writeSessionCache,
+} from '@/lib/client-cache';
 
 type TypeMap = { [key: string]: { label: string; emoji: string } };
 type ColorMap = { [key: string]: string };
@@ -21,9 +27,38 @@ interface MemoryItem {
   created_at: string;
 }
 
-interface DayItem {
+interface DaySummary {
   date: string;
-  records: MemoryItem[];
+  count: number;
+}
+
+const MONTH_SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
+const DAY_RECORDS_CACHE_TTL_MS = 60 * 1000;
+const MONTH_SUMMARY_CACHE_KEY_PREFIX = 'history-month-summary';
+const DAY_RECORDS_CACHE_KEY_PREFIX = 'history-day-records';
+
+const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+
+function getBrowserTimezone(): string {
+  if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai';
+  }
+
+  return 'Asia/Shanghai';
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatMonthKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
 }
 
 export default function HistoryPage() {
@@ -32,9 +67,30 @@ export default function HistoryPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dayRecords, setDayRecords] = useState<MemoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [allRecords, setAllRecords] = useState<DayItem[]>([]);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [calendarLoading, setCalendarLoading] = useState(true);
+  const [monthSummary, setMonthSummary] = useState<Record<string, number>>({});
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const monthSummaryCacheRef = useRef(new Map<string, Record<string, number>>());
+  const dayRecordsCacheRef = useRef(new Map<string, MemoryItem[]>());
+  const monthRequestRef = useRef<AbortController | null>(null);
+  const dayRequestRef = useRef<AbortController | null>(null);
+
+  const timezone = useMemo(() => getBrowserTimezone(), []);
+  const currentMonthKey = useMemo(() => formatMonthKey(currentDate), [currentDate]);
+  const currentCacheVersion = useMemo(
+    () => (deviceId ? getRecordsDataVersion(deviceId) : '0'),
+    [deviceId]
+  );
+
+  const buildMonthCacheKey = useCallback(
+    (month: string) => `${MONTH_SUMMARY_CACHE_KEY_PREFIX}:${deviceId}:${timezone}:${month}`,
+    [deviceId, timezone]
+  );
+  const buildDayCacheKey = useCallback(
+    (date: string) => `${DAY_RECORDS_CACHE_KEY_PREFIX}:${deviceId}:${timezone}:${date}`,
+    [deviceId, timezone]
+  );
 
   useEffect(() => {
     let storedDeviceId = localStorage.getItem('coupleDeviceId');
@@ -46,70 +102,197 @@ export default function HistoryPage() {
   }, []);
 
   useEffect(() => {
-    if (deviceId) {
-      fetchAllRecords();
+    return () => {
+      monthRequestRef.current?.abort();
+      dayRequestRef.current?.abort();
+    };
+  }, []);
+
+  const fetchMonthSummary = useCallback(async (month: string) => {
+    const cacheKey = buildMonthCacheKey(month);
+    const cached = monthSummaryCacheRef.current.get(cacheKey);
+    if (cached) {
+      setMonthSummary(cached);
+      setCalendarLoading(false);
+      return;
     }
-  }, [deviceId]);
+
+    const cachedFromSession = readSessionCache<Record<string, number>>(
+      cacheKey,
+      MONTH_SUMMARY_CACHE_TTL_MS,
+      currentCacheVersion
+    );
+    if (cachedFromSession) {
+      monthSummaryCacheRef.current.set(cacheKey, cachedFromSession);
+      setMonthSummary(cachedFromSession);
+      setCalendarLoading(false);
+      return;
+    }
+
+    monthRequestRef.current?.abort();
+    const controller = new AbortController();
+    monthRequestRef.current = controller;
+    setCalendarLoading(true);
+
+    try {
+      const res = await fetch(
+        `/api/records?deviceId=${encodeURIComponent(deviceId)}&summary=calendar&month=${month}&timezone=${encodeURIComponent(timezone)}`,
+        { signal: controller.signal }
+      );
+      if (!res.ok) {
+        throw new Error(`Failed to fetch calendar summary: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const summaryMap = Object.fromEntries(
+        ((data.days || []) as DaySummary[]).map((item) => [item.date, item.count])
+      );
+      monthSummaryCacheRef.current.set(cacheKey, summaryMap);
+      writeSessionCache(cacheKey, summaryMap, currentCacheVersion);
+      setMonthSummary(summaryMap);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      console.error('Failed to fetch calendar summary:', error);
+      setMonthSummary({});
+    } finally {
+      if (monthRequestRef.current === controller) {
+        monthRequestRef.current = null;
+        setCalendarLoading(false);
+      }
+    }
+  }, [buildMonthCacheKey, currentCacheVersion, deviceId, timezone]);
+
+  const prefetchMonthSummary = useCallback(async (month: string) => {
+    const cacheKey = buildMonthCacheKey(month);
+    if (monthSummaryCacheRef.current.has(cacheKey)) {
+      return;
+    }
+
+    const cachedFromSession = readSessionCache<Record<string, number>>(
+      cacheKey,
+      MONTH_SUMMARY_CACHE_TTL_MS,
+      currentCacheVersion
+    );
+    if (cachedFromSession) {
+      monthSummaryCacheRef.current.set(cacheKey, cachedFromSession);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/records?deviceId=${encodeURIComponent(deviceId)}&summary=calendar&month=${month}&timezone=${encodeURIComponent(timezone)}`
+      );
+      if (!res.ok) {
+        return;
+      }
+
+      const data = await res.json();
+      const summaryMap = Object.fromEntries(
+        ((data.days || []) as DaySummary[]).map((item) => [item.date, item.count])
+      );
+      monthSummaryCacheRef.current.set(cacheKey, summaryMap);
+      writeSessionCache(cacheKey, summaryMap, currentCacheVersion);
+    } catch {
+      // Ignore background prefetch failures.
+    }
+  }, [buildMonthCacheKey, currentCacheVersion, deviceId, timezone]);
+
+  const fetchDayRecords = useCallback(async (date: string) => {
+    setSelectedDate(date);
+    const cacheKey = buildDayCacheKey(date);
+    const cached = dayRecordsCacheRef.current.get(cacheKey);
+    if (cached) {
+      setDayRecords(cached);
+      setDayLoading(false);
+      return;
+    }
+
+    const cachedFromSession = readSessionCache<MemoryItem[]>(
+      cacheKey,
+      DAY_RECORDS_CACHE_TTL_MS,
+      currentCacheVersion
+    );
+    if (cachedFromSession) {
+      dayRecordsCacheRef.current.set(cacheKey, cachedFromSession);
+      setDayRecords(cachedFromSession);
+      setDayLoading(false);
+      return;
+    }
+
+    dayRequestRef.current?.abort();
+    const controller = new AbortController();
+    dayRequestRef.current = controller;
+    setDayLoading(true);
+
+    try {
+      const res = await fetch(
+        `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${date}&timezone=${encodeURIComponent(timezone)}&limit=500&includeTotal=0&fields=id,type,content,polished_content,image_url,image_urls,tags,author,is_completed,deadline,created_at`,
+        { signal: controller.signal }
+      );
+      if (!res.ok) {
+        throw new Error(`Failed to fetch day records: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const records = data.records || [];
+      dayRecordsCacheRef.current.set(cacheKey, records);
+      writeSessionCache(cacheKey, records, currentCacheVersion);
+      setDayRecords(records);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      console.error('Failed to fetch day records:', error);
+      setDayRecords([]);
+    } finally {
+      if (dayRequestRef.current === controller) {
+        dayRequestRef.current = null;
+        setDayLoading(false);
+      }
+    }
+  }, [buildDayCacheKey, currentCacheVersion, deviceId, timezone]);
 
   useEffect(() => {
-    if (deviceId && allRecords.length > 0 && !selectedDate) {
-      // 使用本地时区获取今天的日期，保持格式一致
-      const d = new Date();
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const today = `${year}-${month}-${day}`;
-      setSelectedDate(today);
-      fetchDayRecords(today);
+    if (!deviceId) {
+      return;
     }
-  }, [deviceId, allRecords]);
 
-  const fetchAllRecords = async () => {
-    try {
-      // 优化：只请求需要的字段，不获取图片
-      const res = await fetch(`/api/records?deviceId=${deviceId}&fields=id,type,content,polished_content,tags,author,is_completed,deadline,created_at`);
-      const data = await res.json();
+    void fetchMonthSummary(currentMonthKey);
+  }, [currentMonthKey, deviceId, fetchMonthSummary]);
 
-      const grouped: { [key: string]: MemoryItem[] } = {};
-      (data.records || []).forEach((record: MemoryItem) => {
-        // 使用本地时区转换日期，避免 UTC 与本地时区差异导致日期偏差
-        const d = new Date(record.created_at);
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const localDate = `${year}-${month}-${day}`;
-        if (!grouped[localDate]) {
-          grouped[localDate] = [];
-        }
-        grouped[localDate].push(record);
-      });
-
-      const groupedArray: DayItem[] = Object.entries(grouped).map(([date, records]) => ({
-        date,
-        records,
-      })).sort((a, b) => b.date.localeCompare(a.date));
-
-      setAllRecords(groupedArray);
-    } catch (error) {
-      console.error('Failed to fetch records:', error);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!deviceId || selectedDate) {
+      return;
     }
-  };
 
-  const fetchDayRecords = async (date: string) => {
-    try {
-      // 优化：只请求需要的字段
-      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${date}&fields=id,type,content,polished_content,image_urls,tags,author,is_completed,deadline,created_at`);
-      const data = await res.json();
-      setDayRecords(data.records || []);
-      setSelectedDate(date);
-    } catch (error) {
-      console.error('Failed to fetch day records:', error);
+    const today = formatDateKey(new Date());
+    setSelectedDate(today);
+    void fetchDayRecords(today);
+  }, [deviceId, fetchDayRecords, selectedDate]);
+
+  useEffect(() => {
+    if (!deviceId) {
+      return;
     }
-  };
 
-  const getDaysInMonth = (date: Date) => {
+    const previousMonthKey = formatMonthKey(
+      new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1)
+    );
+    const nextMonthKey = formatMonthKey(
+      new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)
+    );
+
+    const timer = window.setTimeout(() => {
+      void prefetchMonthSummary(previousMonthKey);
+      void prefetchMonthSummary(nextMonthKey);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [currentDate, deviceId, prefetchMonthSummary]);
+
+  function getDaysInMonth(date: Date) {
     const year = date.getFullYear();
     const month = date.getMonth();
     const firstDay = new Date(year, month, 1);
@@ -125,67 +308,47 @@ export default function HistoryPage() {
     }
 
     return days;
-  };
+  }
 
-  const formatDate = (day: number) => {
+  function formatCalendarDate(day: number) {
     const year = currentDate.getFullYear();
     const month = String(currentDate.getMonth() + 1).padStart(2, '0');
     const dayStr = String(day).padStart(2, '0');
     return `${year}-${month}-${dayStr}`;
-  };
+  }
 
-  const hasRecords = (day: number) => {
-    const dateStr = formatDate(day);
-    return allRecords.some(dr => dr.date === dateStr);
-  };
+  function getRecordCount(day: number) {
+    const dateKey = formatCalendarDate(day);
+    return monthSummary[dateKey] || 0;
+  }
 
-  // 获取某天的记录数量
-  const getRecordCount = (day: number) => {
-    const dateStr = formatDate(day);
-    const dayItem = allRecords.find(dr => dr.date === dateStr);
-    return dayItem ? dayItem.records.length : 0;
-  };
-
-  // 根据记录数量获取渐变背景样式
-  const getRecordGradientStyle = (day: number) => {
+  function getRecordGradientStyle(day: number) {
     const count = getRecordCount(day);
     if (count === 0) return 'bg-white hover:bg-gray-50';
+    if (count <= 2) return 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200';
+    if (count <= 5) return 'bg-gradient-to-br from-pink-200 to-rose-200 hover:from-pink-300 hover:to-rose-300';
+    return 'bg-gradient-to-br from-pink-300 to-rose-300 hover:from-pink-400 hover:to-rose-400';
+  }
 
-    // 记录数量对应渐变强度
-    // 1-2条: 浅粉 -> 浅玫瑰
-    // 3-5条: 中粉 -> 中玫瑰
-    // 6+条: 深粉 -> 深玫瑰
-    if (count <= 2) {
-      return 'bg-gradient-to-br from-pink-100 to-rose-100 hover:from-pink-200 hover:to-rose-200';
-    } else if (count <= 5) {
-      return 'bg-gradient-to-br from-pink-200 to-rose-200 hover:from-pink-300 hover:to-rose-300';
-    } else {
-      return 'bg-gradient-to-br from-pink-300 to-rose-300 hover:from-pink-400 hover:to-rose-400';
-    }
-  };
-
-  // 获取文字颜色样式 - 确保在对应背景上有足够的对比度
-  const getRecordTextStyle = (day: number) => {
+  function getRecordTextStyle(day: number) {
     const count = getRecordCount(day);
     if (count === 0) return 'text-gray-600';
     if (count <= 2) return 'text-rose-600 font-semibold';
     if (count <= 5) return 'text-rose-700 font-bold';
     return 'text-white font-bold';
-  };
+  }
 
-  const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
-  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-  const days = getDaysInMonth(currentDate);
+  const days = useMemo(() => getDaysInMonth(currentDate), [currentDate]);
 
   const typeLabels: TypeMap = {
     todo: { label: '待办', emoji: '📝' },
     feeling: { label: '感受', emoji: '💭' },
-    reflection: { label: '反思', emoji: '🌟' },
-    sweet_interaction: { label: '甜蜜互动', emoji: '💕' },
+    reflection: { label: '反思', emoji: '🌙' },
+    sweet_interaction: { label: '甜蜜互动', emoji: '💗' },
   };
 
   const getTypeInfo = (type: string) => {
-    return typeLabels[type] || { label: '记录', emoji: '📝' };
+    return typeLabels[type] || { label: '记录', emoji: '📘' };
   };
 
   const getTypeColor = (type: string) => {
@@ -224,7 +387,6 @@ export default function HistoryPage() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
   };
 
-  // Get all images from a record for lightbox
   const getRecordImages = (record: MemoryItem) => {
     if (record.image_urls && record.image_urls.length > 0) {
       return record.image_urls;
@@ -239,7 +401,7 @@ export default function HistoryPage() {
     <div className="min-h-screen p-4 max-w-2xl mx-auto pb-10">
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-          💕 甜蜜回忆
+          💗 甜蜜回忆
         </h1>
         <button onClick={() => router.push('/')} className="text-pink-400 hover:text-pink-500">
           返回 ❤️
@@ -252,7 +414,7 @@ export default function HistoryPage() {
             ◀
           </button>
           <span className="text-lg font-semibold text-pink-500">
-            {currentDate.getFullYear()}年 {monthNames[currentDate.getMonth()]}
+            {currentDate.getFullYear()} 年 {monthNames[currentDate.getMonth()]}
           </span>
           <button onClick={nextMonth} className="p-2 hover:bg-pink-50 rounded-full text-pink-400 transition">
             ▶
@@ -260,7 +422,7 @@ export default function HistoryPage() {
         </div>
 
         <div className="grid grid-cols-7 gap-1">
-          {weekDays.map(day => (
+          {weekDays.map((day) => (
             <div key={day} className="text-center text-sm text-pink-300 py-2 font-medium">
               {day}
             </div>
@@ -270,18 +432,18 @@ export default function HistoryPage() {
             return (
               <button
                 key={index}
-                onClick={() => day && fetchDayRecords(formatDate(day))}
+                onClick={() => day && void fetchDayRecords(formatCalendarDate(day))}
                 disabled={!day}
                 className={`p-2 text-center rounded-xl transition relative ${
                   day ? getRecordGradientStyle(day) : ''
-                } ${day && selectedDate === formatDate(day) ? 'ring-2 ring-pink-400' : ''}`}
+                } ${day && selectedDate === formatCalendarDate(day) ? 'ring-2 ring-pink-400' : ''}`}
               >
                 <span className={day ? getRecordTextStyle(day) : 'text-gray-600'}>
                   {day || ''}
                 </span>
                 {day && recordCount > 0 && (
                   <span className="absolute -bottom-0.5 left-1/2 transform -translate-x-1/2 text-xs">
-                    {recordCount <= 2 ? '💕' : recordCount <= 5 ? '💗' : '💖'}
+                    {recordCount <= 2 ? '💗' : recordCount <= 5 ? '💕' : '💖'}
                   </span>
                 )}
               </button>
@@ -295,12 +457,12 @@ export default function HistoryPage() {
           <h2 className="text-xl font-semibold mb-4 text-pink-500 flex items-center gap-2">
             📅 {selectedDate} 的甜蜜回忆
           </h2>
-          {loading ? (
+          {dayLoading ? (
             <p className="text-gray-500">加载中...</p>
           ) : dayRecords.length === 0 ? (
             <div className="text-center py-10 text-pink-300">
-              <p className="text-4xl mb-2">💗</p>
-              <p>这天还没有记录哦~</p>
+              <p className="text-4xl mb-2">💞</p>
+              <p>这一天还没有记录哦~</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -316,7 +478,7 @@ export default function HistoryPage() {
                       </span>
                       <span className={`text-sm font-medium ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
                         {getTypeInfo(record.type).emoji} {getTypeInfo(record.type).label}
-                        {record.type === 'todo' && record.is_completed && ' ✓已完成'}
+                        {record.type === 'todo' && record.is_completed && ' 已完成'}
                       </span>
                     </div>
                     <span className="text-xs text-gray-400">
@@ -324,21 +486,28 @@ export default function HistoryPage() {
                     </span>
                   </div>
 
-                  {/* 待办截止时间显示 */}
                   {record.type === 'todo' && record.deadline && (
                     <div className={`mb-2 text-sm flex items-center gap-2 ${
                       record.is_completed ? 'text-gray-400' :
                       new Date(record.deadline) < new Date() ? 'text-red-500 font-semibold' : 'text-blue-500'
                     }`}>
                       <span>📅</span>
-                      <span>截止：{new Date(record.deadline).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>
+                        截止：
+                        {new Date(record.deadline).toLocaleString('zh-CN', {
+                          timeZone: 'Asia/Shanghai',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
                       {!record.is_completed && new Date(record.deadline) < new Date() && (
-                        <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs">⚠️ 已超时</span>
+                        <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs">已超时</span>
                       )}
                     </div>
                   )}
 
-                  {/* Images with click to view */}
                   {getRecordImages(record).length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">
                       {getRecordImages(record).map((url, idx) => (
@@ -347,9 +516,12 @@ export default function HistoryPage() {
                           onClick={() => setSelectedImage(url)}
                           className="relative group"
                         >
-                          <img
+                          <MemoryImage
                             src={url}
                             alt={`记录图片${idx + 1}`}
+                            width={720}
+                            height={540}
+                            sizes="(max-width: 768px) 100vw, 720px"
                             className="w-full max-h-48 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
@@ -364,7 +536,7 @@ export default function HistoryPage() {
 
                   {record.polished_content && (
                     <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-purple-700">
-                      <strong>✨ 润色后：</strong>{record.polished_content}
+                      <strong>润色后：</strong>{record.polished_content}
                     </div>
                   )}
 
@@ -387,14 +559,13 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {!selectedDate && !loading && (
+      {!selectedDate && !calendarLoading && (
         <div className="text-center py-8">
-          <p className="text-pink-300 text-lg mb-2">💕</p>
+          <p className="text-pink-300 text-lg mb-2">💗</p>
           <p className="text-pink-300">点击日历上的日期查看甜蜜回忆</p>
         </div>
       )}
 
-      {/* Image Lightbox Modal */}
       {selectedImage && (
         <div
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
@@ -404,11 +575,14 @@ export default function HistoryPage() {
             className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition"
             onClick={() => setSelectedImage(null)}
           >
-            ✕
+            ×
           </button>
-          <img
+          <MemoryImage
             src={selectedImage}
             alt="查看大图"
+            width={1600}
+            height={1200}
+            sizes="90vw"
             className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
           />
         </div>

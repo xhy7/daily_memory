@@ -42,6 +42,30 @@ export function localDateToUTC(
 }
 
 /**
+ * Convert a local month string to a UTC date range.
+ * @param monthStr - Month in YYYY-MM format (local time)
+ * @param timezone - IANA timezone string
+ * @returns UTC start and end dates covering the whole month
+ */
+export function localMonthToUTC(
+  monthStr: string,
+  timezone: string = getUserTimezone()
+): { start: Date; end: Date } {
+  const [year, month] = monthStr.split('-').map(Number);
+
+  const localStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const localEnd = new Date(year, month, 0, 23, 59, 59, 999);
+
+  const utcStart = fromZonedTime(localStart, timezone);
+  const utcEnd = fromZonedTime(localEnd, timezone);
+
+  return {
+    start: utcStart,
+    end: new Date(utcEnd.getTime() + 1000),
+  };
+}
+
+/**
  * Convert UTC date to local date in specified timezone
  */
 export function utcToLocal(utcDate: Date, timezone: string = getUserTimezone()): Date {

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Sphere, Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
+import MemoryImage from '@/components/MemoryImage';
 
 export interface GraphRecord {
   id: number;
@@ -704,9 +705,12 @@ export default function Diary3DGraph({
                         onClick={() => setSelectedImage(url)}
                         className="relative group w-full rounded-xl overflow-hidden"
                       >
-                        <img
+                        <MemoryImage
                           src={url}
                           alt=""
+                          width={720}
+                          height={540}
+                          sizes="(max-width: 768px) 100vw, 720px"
                           className="w-full max-h-48 object-cover cursor-pointer hover:opacity-90 transition"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-center justify-center">
@@ -718,9 +722,12 @@ export default function Diary3DGraph({
                         onClick={() => setSelectedImage(selectedRecord.image_url!)}
                         className="relative group w-full rounded-xl overflow-hidden"
                       >
-                        <img
+                        <MemoryImage
                           src={selectedRecord.image_url}
                           alt=""
+                          width={720}
+                          height={540}
+                          sizes="(max-width: 768px) 100vw, 720px"
                           className="w-full max-h-48 object-cover cursor-pointer hover:opacity-90 transition"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-center justify-center">
@@ -752,7 +759,14 @@ export default function Diary3DGraph({
       {selectedImage && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setSelectedImage(null)}>
           <button className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition" onClick={() => setSelectedImage(null)}>✕</button>
-          <img src={selectedImage} alt="查看大图" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
+          <MemoryImage
+            src={selectedImage}
+            alt="查看大图"
+            width={1600}
+            height={1200}
+            sizes="90vw"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+          />
         </div>
       )}
     </div>

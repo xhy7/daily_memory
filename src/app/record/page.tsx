@@ -1,7 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import MemoryImage from '@/components/MemoryImage';
+import {
+  bumpRecordsDataVersion,
+  getRecordsDataVersion,
+  readSessionCache,
+  writeSessionCache,
+} from '@/lib/client-cache';
 
 type TypeMap = { [key: string]: { label: string; emoji: string } };
 type ColorMap = { [key: string]: string };
@@ -19,6 +26,28 @@ interface MemoryItem {
   is_completed?: boolean;
   deadline?: string | null;
   created_at: string;
+}
+
+interface UploadedImagePayload {
+  url?: string;
+  pathname?: string;
+}
+
+const TODAY_RECORDS_CACHE_TTL_MS = 60 * 1000;
+const TODAY_RECORDS_CACHE_KEY_PREFIX = 'today-records';
+const MAX_IMAGE_COUNT = 9;
+const MAX_CLIENT_FILE_SIZE = 10 * 1024 * 1024;
+const UPLOAD_CONCURRENCY = 3;
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getTodayCacheKey(currentDeviceId: string, date: string): string {
+  return `${TODAY_RECORDS_CACHE_KEY_PREFIX}:${currentDeviceId}:${date}`;
 }
 
 export default function RecordPage() {
@@ -44,6 +73,80 @@ export default function RecordPage() {
   const [editImages, setEditImages] = useState<string[]>([]);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editUploading, setEditUploading] = useState(false);
+  const recordsRequestRef = useRef<AbortController | null>(null);
+
+  const syncTodayRecordsCache = (records: MemoryItem[], bumpVersion: boolean = false) => {
+    if (!deviceId) {
+      return;
+    }
+
+    const today = formatLocalDate(new Date());
+    const version = bumpVersion
+      ? bumpRecordsDataVersion(deviceId)
+      : getRecordsDataVersion(deviceId);
+
+    writeSessionCache(getTodayCacheKey(deviceId, today), records, version);
+  };
+
+  const updateTodayRecordsState = (
+    updater: (records: MemoryItem[]) => MemoryItem[],
+    bumpVersion: boolean = false
+  ) => {
+    if (bumpVersion) {
+      recordsRequestRef.current?.abort();
+      recordsRequestRef.current = null;
+    }
+
+    setTodayRecords((previousRecords) => {
+      const nextRecords = updater(previousRecords);
+      syncTodayRecordsCache(nextRecords, bumpVersion);
+      return nextRecords;
+    });
+  };
+
+  const uploadImagesToStorage = useCallback(async (files: File[]) => {
+    const uploadedUrls: string[] = [];
+    const failedFiles: string[] = [];
+
+    for (let i = 0; i < files.length; i += UPLOAD_CONCURRENCY) {
+      const batch = files.slice(i, i + UPLOAD_CONCURRENCY);
+      const formData = new FormData();
+      batch.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || `Upload failed: ${response.status}`);
+        }
+
+        const batchUploads = Array.isArray(data.uploads) ? data.uploads : [];
+        if (batchUploads.length !== batch.length) {
+          throw new Error('Upload response count did not match request count');
+        }
+
+        uploadedUrls.push(
+          ...batchUploads
+            .map((upload: UploadedImagePayload) => (typeof upload?.url === 'string' ? upload.url : null))
+            .filter((url: string | null): url is string => Boolean(url))
+        );
+      } catch (error) {
+        batch.forEach((file) => {
+          console.error(`Failed to upload image ${file.name}:`, error);
+          failedFiles.push(file.name);
+        });
+      }
+    }
+
+    return { uploadedUrls, failedFiles };
+  }, []);
 
   useEffect(() => {
     // Use a shared couple device ID
@@ -64,34 +167,112 @@ export default function RecordPage() {
   }, []);
 
   useEffect(() => {
-    if (deviceId) {
-      fetchTodayRecords();
+    return () => {
+      recordsRequestRef.current?.abort();
+    };
+  }, []);
+
+  const fetchTodayRecords = useCallback(async () => {
+    // 使用本地时区获取今天的日期，保持格式一致 YYYY-MM-DD
+    const today = formatLocalDate(new Date());
+    const cacheKey = getTodayCacheKey(deviceId, today);
+    const cacheVersion = getRecordsDataVersion(deviceId);
+    const cachedRecords = readSessionCache<MemoryItem[]>(
+      cacheKey,
+      TODAY_RECORDS_CACHE_TTL_MS,
+      cacheVersion
+    );
+
+    if (cachedRecords) {
+      setTodayRecords(cachedRecords);
+      setLoading(false);
+    }
+
+    recordsRequestRef.current?.abort();
+    const controller = new AbortController();
+    recordsRequestRef.current = controller;
+    try {
+      // 优化：只请求需要的字段
+      const res = await fetch(
+        `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${today}&limit=500&includeTotal=0&fields=id,type,content,image_urls,tags,author,is_completed,deadline,created_at`,
+        { signal: controller.signal }
+      );
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch records: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const records = data.records || [];
+      setTodayRecords(records);
+      writeSessionCache(cacheKey, records, cacheVersion);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      console.error('Failed to fetch records:', error);
+    } finally {
+      if (recordsRequestRef.current === controller) {
+        recordsRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }, [deviceId]);
 
-  const fetchTodayRecords = async () => {
-    // 使用本地时区获取今天的日期，保持格式一致 YYYY-MM-DD
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const today = `${year}-${month}-${day}`;
-    try {
-      // 优化：只请求需要的字段
-      const res = await fetch(`/api/records?deviceId=${deviceId}&date=${today}&fields=id,type,content,image_urls,tags,author,is_completed,deadline,created_at`);
-      const data = await res.json();
-      console.log('Fetched records:', data);
-      setTodayRecords(data.records || []);
-    } catch (error) {
-      console.error('Failed to fetch records:', error);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (deviceId) {
+      void fetchTodayRecords();
     }
-  };
+  }, [deviceId, fetchTodayRecords]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const input = e.target;
+    const pendingFiles = Array.from(input.files || []);
+    void (async () => {
+      if (pendingFiles.length === 0) return;
+
+      const remainingSlots = Math.max(0, MAX_IMAGE_COUNT - imageUrls.length);
+      const selectedFiles = pendingFiles.slice(0, remainingSlots);
+      const oversizedFiles = selectedFiles.filter((file) => file.size > MAX_CLIENT_FILE_SIZE);
+      const validFiles = selectedFiles.filter((file) => file.size <= MAX_CLIENT_FILE_SIZE);
+
+      if (pendingFiles.length > remainingSlots) {
+        alert(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片，超出的图片已忽略`);
+      }
+
+      if (oversizedFiles.length > 0) {
+        alert(`以下图片超过 ${MAX_CLIENT_FILE_SIZE / 1024 / 1024}MB，已跳过：${oversizedFiles.map((file) => file.name).join(', ')}`);
+      }
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      if (validFiles.length === 0) {
+        return;
+      }
+
+      setUploading(true);
+
+      try {
+        const { uploadedUrls, failedFiles } = await uploadImagesToStorage(validFiles);
+        if (uploadedUrls.length > 0) {
+          setImageUrls((previous) => [...previous, ...uploadedUrls].slice(0, MAX_IMAGE_COUNT));
+        }
+
+        if (failedFiles.length > 0) {
+          alert(`部分图片上传失败：${failedFiles.join(', ')}`);
+        }
+      } finally {
+        setUploading(false);
+        input.value = '';
+      }
+    })();
+    return;
+
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setUploading(true);
     let loadedCount = 0;
@@ -117,8 +298,9 @@ export default function RecordPage() {
     });
 
     // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    const createFileInput = fileInputRef.current;
+    if (createFileInput) {
+      createFileInput!.value = '';
     }
   };
 
@@ -128,7 +310,7 @@ export default function RecordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim()) return;
+    if (!content.trim() || uploading) return;
 
     localStorage.setItem('lastAuthor', author);
 
@@ -157,7 +339,7 @@ export default function RecordPage() {
       setContent('');
       setImageUrls([]);
       setTodoDeadline('');
-      setTodayRecords([newRecord, ...todayRecords]);
+      updateTodayRecordsState((records) => [newRecord, ...records], true);
     } catch (error) {
       console.error('Failed to create record:', error);
       alert('保存失败，请稍后重试');
@@ -218,9 +400,12 @@ export default function RecordPage() {
             body: JSON.stringify({ id: recordId, tags: data.tags }),
           });
 
-          setTodayRecords(todayRecords.map(r =>
-            r.id === recordId ? { ...r, tags: data.tags } : r
-          ));
+          updateTodayRecordsState(
+            (records) => records.map((record) =>
+              record.id === recordId ? { ...record, tags: data.tags } : record
+            ),
+            true
+          );
         }
       } else {
         alert('未能提取到标签，请重试' + debugInfo);
@@ -230,28 +415,6 @@ export default function RecordPage() {
       alert('提取标签失败，请稍后重试');
     } finally {
       setExtracting(false);
-    }
-  };
-
-  const handleAddTag = async (recordId: number, newTag: string) => {
-    const record = todayRecords.find(r => r.id === recordId);
-    if (!record) return;
-
-    const currentTags = record.tags || [];
-    const updatedTags = [...currentTags, newTag];
-
-    try {
-      await fetch('/api/records', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: recordId, tags: updatedTags }),
-      });
-
-      setTodayRecords(todayRecords.map(r =>
-        r.id === recordId ? { ...r, tags: updatedTags } : r
-      ));
-    } catch (error) {
-      console.error('Failed to add tag:', error);
     }
   };
 
@@ -269,9 +432,12 @@ export default function RecordPage() {
         body: JSON.stringify({ id: recordId, tags: updatedTags }),
       });
 
-      setTodayRecords(todayRecords.map(r =>
-        r.id === recordId ? { ...r, tags: updatedTags } : r
-      ));
+      updateTodayRecordsState(
+        (records) => records.map((record) =>
+          record.id === recordId ? { ...record, tags: updatedTags } : record
+        ),
+        true
+      );
     } catch (error) {
       console.error('Failed to remove tag:', error);
     }
@@ -292,9 +458,12 @@ export default function RecordPage() {
         return;
       }
 
-      setTodayRecords(todayRecords.map(r =>
-        r.id === recordId ? { ...r, is_completed: !currentStatus } : r
-      ));
+      updateTodayRecordsState(
+        (records) => records.map((record) =>
+          record.id === recordId ? { ...record, is_completed: !currentStatus } : record
+        ),
+        true
+      );
     } catch (error) {
       console.error('Failed to toggle complete:', error);
     }
@@ -315,9 +484,12 @@ export default function RecordPage() {
         return;
       }
 
-      setTodayRecords(todayRecords.map(r =>
-        r.id === recordId ? { ...r, deadline: newDeadline || null } : r
-      ));
+      updateTodayRecordsState(
+        (records) => records.map((record) =>
+          record.id === recordId ? { ...record, deadline: newDeadline || null } : record
+        ),
+        true
+      );
     } catch (error) {
       console.error('Failed to update deadline:', error);
     }
@@ -381,6 +553,7 @@ export default function RecordPage() {
   const handleStartEdit = (record: MemoryItem) => {
     setEditingId(record.id);
     setEditContent(record.content);
+    setEditUploading(false);
     // Get images from record - support both old and new format
     const existingImages = record.image_urls && record.image_urls.length > 0
       ? record.image_urls
@@ -399,7 +572,7 @@ export default function RecordPage() {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingId || !editContent.trim()) return;
+    if (!editingId || !editContent.trim() || editUploading) return;
 
     setSavingEdit(true);
     try {
@@ -421,9 +594,14 @@ export default function RecordPage() {
       }
 
       const updatedRecord = await res.json();
-      setTodayRecords(todayRecords.map(r =>
-        r.id === editingId ? { ...r, content: updatedRecord.content, image_urls: updatedRecord.image_urls } : r
-      ));
+      updateTodayRecordsState(
+        (records) => records.map((record) =>
+          record.id === editingId
+            ? { ...record, content: updatedRecord.content, image_urls: updatedRecord.image_urls }
+            : record
+        ),
+        true
+      );
       setEditingId(null);
       setEditContent('');
       setEditImages([]);
@@ -446,7 +624,10 @@ export default function RecordPage() {
         return;
       }
 
-      setTodayRecords(todayRecords.filter(r => r.id !== recordId));
+      updateTodayRecordsState(
+        (records) => records.filter((record) => record.id !== recordId),
+        true
+      );
     } catch (error) {
       console.error('Failed to delete record:', error);
       alert('删除失败，请稍后重试');
@@ -454,8 +635,50 @@ export default function RecordPage() {
   };
 
   const handleEditImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const input = e.target;
+    const pendingFiles = Array.from(input.files || []);
+    void (async () => {
+      if (pendingFiles.length === 0) return;
+
+      const remainingSlots = Math.max(0, MAX_IMAGE_COUNT - editImages.length);
+      const selectedFiles = pendingFiles.slice(0, remainingSlots);
+      const oversizedFiles = selectedFiles.filter((file) => file.size > MAX_CLIENT_FILE_SIZE);
+      const validFiles = selectedFiles.filter((file) => file.size <= MAX_CLIENT_FILE_SIZE);
+
+      if (pendingFiles.length > remainingSlots) {
+        alert(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片，超出的图片已忽略`);
+      }
+
+      if (oversizedFiles.length > 0) {
+        alert(`以下图片超过 ${MAX_CLIENT_FILE_SIZE / 1024 / 1024}MB，已跳过：${oversizedFiles.map((file) => file.name).join(', ')}`);
+      }
+
+      input.value = '';
+
+      if (validFiles.length === 0) {
+        return;
+      }
+
+      setEditUploading(true);
+
+      try {
+        const { uploadedUrls, failedFiles } = await uploadImagesToStorage(validFiles);
+        if (uploadedUrls.length > 0) {
+          setEditImages((previous) => [...previous, ...uploadedUrls].slice(0, MAX_IMAGE_COUNT));
+        }
+
+        if (failedFiles.length > 0) {
+          alert(`部分图片上传失败：${failedFiles.join(', ')}`);
+        }
+      } finally {
+        setEditUploading(false);
+        input.value = '';
+      }
+    })();
+    return;
+
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     let loadedCount = 0;
     let totalToLoad = 0;
@@ -575,7 +798,14 @@ export default function RecordPage() {
             <div className="flex flex-wrap gap-2 mt-2">
               {imageUrls.map((url, idx) => (
                 <div key={idx} className="relative">
-                  <img src={url} alt={`预览${idx + 1}`} className="w-16 h-16 object-cover rounded-lg" />
+                  <MemoryImage
+                    src={url}
+                    alt={`预览${idx + 1}`}
+                    width={64}
+                    height={64}
+                    sizes="64px"
+                    className="w-16 h-16 object-cover rounded-lg"
+                  />
                   <button
                     type="button"
                     onClick={() => removeImage(idx)}
@@ -628,7 +858,7 @@ export default function RecordPage() {
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={!content.trim()}
+            disabled={!content.trim() || uploading}
             className="flex-1 py-3 bg-gradient-to-r from-pink-400 to-rose-400 text-white rounded-xl hover:from-pink-500 hover:to-rose-500 disabled:opacity-50 shadow-md"
           >
             💕 保存
@@ -636,7 +866,7 @@ export default function RecordPage() {
           <button
             type="button"
             onClick={() => handleExtractTags(-1, content, imageUrls[0])}
-            disabled={(!content.trim() && imageUrls.length === 0) || extracting}
+            disabled={(!content.trim() && imageUrls.length === 0) || extracting || uploading}
             className="flex-1 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white rounded-xl hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 shadow-md"
           >
             {extracting ? '✨ 分析中...' : '✨ 智能标签'}
@@ -667,13 +897,14 @@ export default function RecordPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={handleCancelEdit}
+                        disabled={editUploading}
                         className="px-3 py-1 text-sm bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
                       >
                         取消
                       </button>
                       <button
                         onClick={handleSaveEdit}
-                        disabled={savingEdit || !editContent.trim()}
+                        disabled={savingEdit || editUploading || !editContent.trim()}
                         className="px-3 py-1 text-sm bg-pink-400 text-white rounded-lg hover:bg-pink-500 disabled:opacity-50"
                       >
                         {savingEdit ? '保存中...' : '保存'}
@@ -693,7 +924,8 @@ export default function RecordPage() {
                     />
                     <button
                       type="button"
-                      onClick={() => editFileInputRef.current?.click()}
+                        onClick={() => editFileInputRef.current?.click()}
+                        disabled={editUploading}
                       className="py-1 px-3 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition text-sm flex items-center gap-1"
                     >
                       📷 添加图片
@@ -702,7 +934,14 @@ export default function RecordPage() {
                       <div className="flex flex-wrap gap-2 mt-2">
                         {editImages.map((url, idx) => (
                           <div key={idx} className="relative">
-                            <img src={url} alt={`预览${idx + 1}`} className="w-16 h-16 object-cover rounded-lg" />
+                            <MemoryImage
+                              src={url}
+                              alt={`预览${idx + 1}`}
+                              width={64}
+                              height={64}
+                              sizes="64px"
+                              className="w-16 h-16 object-cover rounded-lg"
+                            />
                             <button
                               type="button"
                               onClick={() => handleRemoveEditImage(idx)}
@@ -792,7 +1031,14 @@ export default function RecordPage() {
                   {record.image_urls && record.image_urls.length > 0 ? (
                     record.image_urls.map((url, idx) => (
                       <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
-                        <img src={url} alt={`记录图片${idx + 1}`} className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                        <MemoryImage
+                          src={url}
+                          alt={`记录图片${idx + 1}`}
+                          width={720}
+                          height={540}
+                          sizes="(max-width: 768px) 100vw, 720px"
+                          className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
+                        />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
                           <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
                         </div>
@@ -800,7 +1046,14 @@ export default function RecordPage() {
                     ))
                   ) : record.image_url ? (
                     <button onClick={() => setSelectedImage(record.image_url!)} className="relative group">
-                      <img src={record.image_url} alt="记录图片" className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                      <MemoryImage
+                        src={record.image_url}
+                        alt="记录图片"
+                        width={720}
+                        height={540}
+                        sizes="(max-width: 768px) 100vw, 720px"
+                        className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
+                      />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
                         <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
                       </div>
@@ -857,9 +1110,12 @@ export default function RecordPage() {
           >
             ✕
           </button>
-          <img
+          <MemoryImage
             src={selectedImage}
             alt="查看大图"
+            width={1600}
+            height={1200}
+            sizes="90vw"
             className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
           />
         </div>
