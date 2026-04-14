@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -220,55 +220,6 @@ export default function RecordPage() {
     };
   }, []);
 
-  const fetchTodayRecordsLegacy = useCallback(async () => {
-    // 使用本地时区获取今天的日期，保持格式一致 YYYY-MM-DD
-    const today = formatLocalDate(new Date());
-    const cacheKey = getTodayCacheKey(deviceId, today);
-    const cacheVersion = getRecordsDataVersion(deviceId);
-    const cachedRecords = readSessionCache<MemoryItem[]>(
-      cacheKey,
-      TODAY_RECORDS_CACHE_TTL_MS,
-      cacheVersion
-    );
-
-    if (cachedRecords) {
-      setTodayRecords(cachedRecords);
-      setLoading(false);
-    }
-
-    recordsRequestRef.current?.abort();
-    const controller = new AbortController();
-    recordsRequestRef.current = controller;
-    try {
-      // 优化：只请求需要的字段
-      const res = await fetch(
-        `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${today}&limit=500&includeTotal=0&fields=id,type,content,image_urls,tags,author,is_completed,deadline,created_at`,
-        { signal: controller.signal }
-      );
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch records: ${res.status}`);
-      }
-
-      const data = await res.json();
-      const records = data.records || [];
-      setTodayRecords(records);
-      writeSessionCache(cacheKey, records, cacheVersion);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
-      }
-
-      console.error('Failed to fetch records:', error);
-    } finally {
-      if (recordsRequestRef.current === controller) {
-        recordsRequestRef.current = null;
-        setLoading(false);
-      }
-    }
-  }, [deviceId]);
-
-  void fetchTodayRecordsLegacy;
 
   const fetchTodayRecords = useCallback(async (options: { append?: boolean } = {}) => {
     const append = options.append === true;
@@ -351,11 +302,11 @@ export default function RecordPage() {
       const validFiles = selectedFiles.filter((file) => file.size <= MAX_CLIENT_FILE_SIZE);
 
       if (pendingFiles.length > remainingSlots) {
-        alert(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片，超出的图片已忽略`);
+        alert(`You can upload up to ${MAX_IMAGE_COUNT} images. Extra files were skipped.`);
       }
 
       if (oversizedFiles.length > 0) {
-        alert(`以下图片超过 ${MAX_CLIENT_FILE_SIZE / 1024 / 1024}MB，已跳过：${oversizedFiles.map((file) => file.name).join(', ')}`);
+        alert(`Some images exceed ${MAX_CLIENT_FILE_SIZE / 1024 / 1024}MB and were skipped: ${oversizedFiles.map((file) => file.name).join(', ')}`);
       }
 
       if (fileInputRef.current) {
@@ -375,48 +326,14 @@ export default function RecordPage() {
         }
 
         if (failedFiles.length > 0) {
-          alert(`部分图片上传失败：${failedFiles.join(', ')}`);
+          alert(`Some images failed to upload: ${failedFiles.join(', ')}`);
         }
       } finally {
         setUploading(false);
         input.value = '';
       }
     })();
-    return;
-
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    setUploading(true);
-    let loadedCount = 0;
-    const newImages: string[] = [];
-
-    Array.from(files).forEach((file) => {
-      // Check file size - warn if too large
-      if (file.size > 4.5 * 1024 * 1024) {
-        alert(`图片 ${file.name} 超过4.5MB，将被跳过`);
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        newImages.push(reader.result as string);
-        loadedCount++;
-        if (loadedCount === files.length) {
-          setImageUrls(prev => [...prev, ...newImages].slice(0, 9)); // Max 9 images
-          setUploading(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-
-    // Reset input
-    const createFileInput = fileInputRef.current;
-    if (createFileInput) {
-      createFileInput!.value = '';
-    }
   };
-
   const removeImage = (index: number) => {
     setImageUrls(prev => prev.filter((_, i) => i !== index));
   };
@@ -444,7 +361,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('保存失败: ' + (errorData.error || '未知错误'));
+        alert('淇濆瓨澶辫触: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -455,7 +372,7 @@ export default function RecordPage() {
       updateTodayRecordsState((records) => [newRecord, ...records], true);
     } catch (error) {
       console.error('Failed to create record:', error);
-      alert('保存失败，请稍后重试');
+      alert('淇濆瓨澶辫触锛岃绋嶅悗閲嶈瘯');
     }
   };
 
@@ -493,19 +410,19 @@ export default function RecordPage() {
           }
         }
         const errorMsg = detailsStr
-          ? `提取标签失败: ${data.error}\n详细信息: ${detailsStr}`
-          : '提取标签失败: ' + data.error;
+          ? `鎻愬彇鏍囩澶辫触: ${data.error}\n璇︾粏淇℃伅: ${detailsStr}`
+          : '鎻愬彇鏍囩澶辫触: ' + data.error;
         alert(errorMsg);
         setExtracting(false);
         return;
       }
 
-      // 始终显示调试信息
-      const debugInfo = data.debug ? `\n(原始响应: ${data.debug.rawResponse || '无'})` : '';
+      // 濮嬬粓鏄剧ず璋冭瘯淇℃伅
+      const debugInfo = data.debug ? `\n(Raw response: ${data.debug.rawResponse || 'none'})` : '';
 
       if (data.tags && data.tags.length > 0) {
         if (recordId === -1) {
-          alert('提取到标签: ' + data.tags.join(', ') + debugInfo);
+          alert('鎻愬彇鍒版爣绛? ' + data.tags.join(', ') + debugInfo);
         } else {
           await fetch('/api/records', {
             method: 'PATCH',
@@ -521,11 +438,11 @@ export default function RecordPage() {
           );
         }
       } else {
-        alert('未能提取到标签，请重试' + debugInfo);
+        alert('No tags were extracted. Please try again.' + debugInfo);
       }
     } catch (error) {
       console.error('Failed to extract tags:', error);
-      alert('提取标签失败，请稍后重试');
+      alert('鎻愬彇鏍囩澶辫触锛岃绋嶅悗閲嶈瘯');
     } finally {
       setExtracting(false);
     }
@@ -556,8 +473,7 @@ export default function RecordPage() {
     }
   };
 
-  // 切换待办完成状态
-  const handleToggleComplete = async (recordId: number, currentStatus: boolean) => {
+  // 鍒囨崲寰呭姙瀹屾垚鐘舵€?  const handleToggleComplete = async (recordId: number, currentStatus: boolean) => {
     try {
       const res = await fetch('/api/records', {
         method: 'PATCH',
@@ -567,7 +483,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('更新失败: ' + (errorData.error || '未知错误'));
+        alert('鏇存柊澶辫触: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -582,7 +498,7 @@ export default function RecordPage() {
     }
   };
 
-  // 更新待办截止时间
+  // 鏇存柊寰呭姙鎴鏃堕棿
   const handleUpdateDeadline = async (recordId: number, newDeadline: string) => {
     try {
       const res = await fetch('/api/records', {
@@ -593,7 +509,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('更新失败: ' + (errorData.error || '未知错误'));
+        alert('鏇存柊澶辫触: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -608,31 +524,29 @@ export default function RecordPage() {
     }
   };
 
-  // 检查待办是否超时
   const isOverdue = (record: MemoryItem) => {
     if (!record.deadline || record.is_completed) return false;
     return new Date(record.deadline) < new Date();
   };
 
-  // 格式化截止时间显示
   const formatDeadline = (deadline: string) => {
     const d = new Date(deadline);
     const month = d.getMonth() + 1;
     const day = d.getDate();
     const hours = d.getHours().toString().padStart(2, '0');
     const minutes = d.getMinutes().toString().padStart(2, '0');
-    return `${month}月${day}日 ${hours}:${minutes}`;
+    return `${month}/${day} ${hours}:${minutes}`;
   };
 
   const typeLabels: TypeMap = {
-    todo: { label: '待办', emoji: '📝' },
-    feeling: { label: '感受', emoji: '💭' },
-    reflection: { label: '反思', emoji: '🌟' },
-    sweet_interaction: { label: '甜蜜互动', emoji: '💕' },
+    todo: { label: '寰呭姙', emoji: '馃摑' },
+    feeling: { label: '鎰熷彈', emoji: '馃挱' },
+    reflection: { label: 'Reflection', emoji: '💭' },
+    sweet_interaction: { label: '鐢滆湝浜掑姩', emoji: '馃挄' },
   };
 
   const getTypeInfo = (type: string) => {
-    return typeLabels[type] || { label: '记录', emoji: '📝' };
+    return typeLabels[type] || { label: '璁板綍', emoji: '馃摑' };
   };
 
   const getTypeColor = (type: string) => {
@@ -646,8 +560,8 @@ export default function RecordPage() {
   };
 
   const authorLabels: AuthorMap = {
-    him: '他',
-    her: '她',
+    him: 'Him',
+    her: 'Her',
   };
 
   const getAuthorColor = (author: string) => {
@@ -659,7 +573,7 @@ export default function RecordPage() {
   };
 
   const getAuthorLabel = (author: string) => {
-    return authorLabels[author] || '她';
+    return authorLabels[author] || 'Her';
   };
 
   // Edit record functions
@@ -701,7 +615,7 @@ export default function RecordPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        alert('保存失败: ' + (errorData.error || '未知错误'));
+        alert('淇濆瓨澶辫触: ' + (errorData.error || '鏈煡閿欒'));
         setSavingEdit(false);
         return;
       }
@@ -720,20 +634,20 @@ export default function RecordPage() {
       setEditImages([]);
     } catch (error) {
       console.error('Failed to update record:', error);
-      alert('保存失败，请稍后重试');
+      alert('淇濆瓨澶辫触锛岃绋嶅悗閲嶈瘯');
     } finally {
       setSavingEdit(false);
     }
   };
 
   const handleDeleteRecord = async (recordId: number) => {
-    if (!confirm('确定要删除这条记录吗？')) return;
+    if (!confirm('Delete this record?')) return;
 
     try {
       const res = await fetch(`/api/records?id=${recordId}`, { method: 'DELETE' });
       if (!res.ok) {
         const errorData = await res.json();
-        alert('删除失败: ' + (errorData.error || '未知错误'));
+        alert('鍒犻櫎澶辫触: ' + (errorData.error || '鏈煡閿欒'));
         return;
       }
 
@@ -743,7 +657,7 @@ export default function RecordPage() {
       );
     } catch (error) {
       console.error('Failed to delete record:', error);
-      alert('删除失败，请稍后重试');
+      alert('鍒犻櫎澶辫触锛岃绋嶅悗閲嶈瘯');
     }
   };
 
@@ -759,11 +673,11 @@ export default function RecordPage() {
       const validFiles = selectedFiles.filter((file) => file.size <= MAX_CLIENT_FILE_SIZE);
 
       if (pendingFiles.length > remainingSlots) {
-        alert(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片，超出的图片已忽略`);
+        alert(`You can upload up to ${MAX_IMAGE_COUNT} images. Extra files were skipped.`);
       }
 
       if (oversizedFiles.length > 0) {
-        alert(`以下图片超过 ${MAX_CLIENT_FILE_SIZE / 1024 / 1024}MB，已跳过：${oversizedFiles.map((file) => file.name).join(', ')}`);
+        alert(`Some images exceed ${MAX_CLIENT_FILE_SIZE / 1024 / 1024}MB and were skipped: ${oversizedFiles.map((file) => file.name).join(', ')}`);
       }
 
       input.value = '';
@@ -781,60 +695,14 @@ export default function RecordPage() {
         }
 
         if (failedFiles.length > 0) {
-          alert(`部分图片上传失败：${failedFiles.join(', ')}`);
+          alert(`Some images failed to upload: ${failedFiles.join(', ')}`);
         }
       } finally {
         setEditUploading(false);
         input.value = '';
       }
     })();
-    return;
-
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    let loadedCount = 0;
-    let totalToLoad = 0;
-    const newImages: string[] = [];
-
-    // First pass: count files to load (excluding oversized)
-    Array.from(files).forEach((file) => {
-      if (file.size > 4.5 * 1024 * 1024) {
-        alert(`图片 ${file.name} 超过4.5MB，将被跳过`);
-        return;
-      }
-      totalToLoad++;
-    });
-
-    if (totalToLoad === 0) {
-      // Reset input even when all files are oversized
-      if (e.target) {
-        e.target.value = '';
-      }
-      return;
-    }
-
-    // Second pass: load valid files
-    Array.from(files).forEach((file) => {
-      if (file.size > 4.5 * 1024 * 1024) return;
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        newImages.push(reader.result as string);
-        loadedCount++;
-        if (loadedCount === totalToLoad) {
-          setEditImages(prev => [...prev, ...newImages].slice(0, 9));
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-
-    // Reset input
-    if (e.target) {
-      e.target.value = '';
-    }
   };
-
   const handleRemoveEditImage = (index: number) => {
     setEditImages(prev => prev.filter((_, i) => i !== index));
   };
@@ -843,16 +711,16 @@ export default function RecordPage() {
     <div className="min-h-screen p-4 max-w-2xl mx-auto pb-20">
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-          💖 记录今日
+          馃挅 璁板綍浠婃棩
         </h1>
         <button onClick={() => router.push('/')} className="text-pink-400 hover:text-pink-500">
-          返回 ❤️
+          杩斿洖 鉂わ笍
         </button>
       </header>
 
       <form onSubmit={handleSubmit} className="mb-8 space-y-4">
         <div className="flex gap-2">
-          <span className="text-sm text-pink-400 self-center mr-2">记录人：</span>
+          <span className="text-sm text-pink-400 self-center mr-2">璁板綍浜猴細</span>
           <button
             type="button"
             onClick={() => setAuthor('him')}
@@ -860,7 +728,7 @@ export default function RecordPage() {
               author === 'him' ? 'bg-blue-400 text-white' : 'bg-blue-50 text-blue-400'
             }`}
           >
-            👦 {authorLabels.him}
+            馃懄 {authorLabels.him}
           </button>
           <button
             type="button"
@@ -869,7 +737,7 @@ export default function RecordPage() {
               author === 'her' ? 'bg-rose-400 text-white' : 'bg-rose-50 text-rose-400'
             }`}
           >
-            👧 {authorLabels.her}
+            馃懅 {authorLabels.her}
           </button>
         </div>
 
@@ -905,7 +773,7 @@ export default function RecordPage() {
             disabled={uploading}
             className="py-2 px-4 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition flex items-center gap-2"
           >
-            {uploading ? '上传中...' : '📷 添加图片(最多9张)'}
+            {uploading ? '涓婁紶涓?..' : '馃摲 娣诲姞鍥剧墖(鏈€澶?寮?'}
           </button>
           {imageUrls.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-2">
@@ -913,7 +781,7 @@ export default function RecordPage() {
                 <div key={idx} className="relative">
                   <MemoryImage
                     src={url}
-                    alt={`预览${idx + 1}`}
+                    alt={`棰勮${idx + 1}`}
                     width={64}
                     height={64}
                     sizes="64px"
@@ -924,8 +792,7 @@ export default function RecordPage() {
                     onClick={() => removeImage(idx)}
                     className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs"
                   >
-                    ✕
-                  </button>
+                    鉁?                  </button>
                 </div>
               ))}
             </div>
@@ -937,19 +804,19 @@ export default function RecordPage() {
           onChange={(e) => setContent(e.target.value)}
           placeholder={
             recordType === 'sweet_interaction'
-              ? '记录甜蜜互动：约会、礼物、小惊喜...'
+              ? '璁板綍鐢滆湝浜掑姩锛氱害浼氥€佺ぜ鐗┿€佸皬鎯婂枩...'
               : recordType === 'todo'
-              ? '写下你要完成的任务...'
-              : '记录你的待办、感受或反思...'
+              ? '鍐欎笅浣犺瀹屾垚鐨勪换鍔?..'
+              : '璁板綍浣犵殑寰呭姙銆佹劅鍙楁垨鍙嶆€?..'
           }
           className="w-full p-4 border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent bg-white"
           rows={4}
         />
 
-        {/* 截止时间输入 - 仅待办类型显示 */}
+        {/* 鎴鏃堕棿杈撳叆 - 浠呭緟鍔炵被鍨嬫樉绀?*/}
         {recordType === 'todo' && (
           <div className="flex items-center gap-3">
-            <span className="text-sm text-blue-400">📅 截止时间：</span>
+            <span className="text-sm text-blue-400">Deadline</span>
             <input
               type="datetime-local"
               value={todoDeadline}
@@ -962,7 +829,7 @@ export default function RecordPage() {
                 onClick={() => setTodoDeadline('')}
                 className="text-xs text-gray-400 hover:text-gray-600"
               >
-                清除
+                娓呴櫎
               </button>
             )}
           </div>
@@ -974,7 +841,7 @@ export default function RecordPage() {
             disabled={!content.trim() || uploading}
             className="flex-1 py-3 bg-gradient-to-r from-pink-400 to-rose-400 text-white rounded-xl hover:from-pink-500 hover:to-rose-500 disabled:opacity-50 shadow-md"
           >
-            💕 保存
+            馃挄 淇濆瓨
           </button>
           <button
             type="button"
@@ -982,233 +849,229 @@ export default function RecordPage() {
             disabled={(!content.trim() && imageUrls.length === 0) || extracting || uploading}
             className="flex-1 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white rounded-xl hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 shadow-md"
           >
-            {extracting ? '✨ 分析中...' : '✨ 智能标签'}
+            {extracting ? '鉁?鍒嗘瀽涓?..' : '鉁?鏅鸿兘鏍囩'}
           </button>
         </div>
       </form>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-pink-500">今日甜蜜记录 💕</h2>
+        <h2 className="text-xl font-semibold text-pink-500">Today's Memories</h2>
         {loading ? (
-          <p className="text-gray-500">加载中...</p>
+          <p className="text-gray-500">Loading...</p>
         ) : todayRecords.length === 0 ? (
           <div className="text-center py-10 text-pink-300">
-            <p className="text-4xl mb-2">💗</p>
-            <p>今天还没有记录哦~</p>
+            <p className="text-4xl mb-2">🫶</p>
+            <p>No records yet today.</p>
           </div>
         ) : (
           <>
             {todayRecords.map((record) => (
-            <div
-              key={record.id}
-              className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${record.is_completed ? 'from-gray-100 to-gray-100 border-gray-400' : getTypeColor(record.type)} shadow-sm`}
-            >
-              {editingId === record.id ? (
-                // Edit mode
-                <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-sm font-medium text-gray-500">编辑模式</span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleCancelEdit}
-                        disabled={editUploading}
-                        className="px-3 py-1 text-sm bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
-                      >
-                        取消
-                      </button>
-                      <button
-                        onClick={handleSaveEdit}
-                        disabled={savingEdit || editUploading || !editContent.trim()}
-                        className="px-3 py-1 text-sm bg-pink-400 text-white rounded-lg hover:bg-pink-500 disabled:opacity-50"
-                      >
-                        {savingEdit ? '保存中...' : '保存'}
-                      </button>
+              <div
+                key={record.id}
+                className={`p-4 rounded-xl border-l-4 bg-gradient-to-r ${record.is_completed ? 'from-gray-100 to-gray-100 border-gray-400' : getTypeColor(record.type)} shadow-sm`}
+              >
+                {editingId === record.id ? (
+                  <div>
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-sm font-medium text-gray-500">Editing</span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleCancelEdit}
+                          disabled={editUploading}
+                          className="px-3 py-1 text-sm bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveEdit}
+                          disabled={savingEdit || editUploading || !editContent.trim()}
+                          className="px-3 py-1 text-sm bg-pink-400 text-white rounded-lg hover:bg-pink-500 disabled:opacity-50"
+                        >
+                          {savingEdit ? 'Saving...' : 'Save'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Edit image upload */}
-                  <div className="mb-3">
-                    <input
-                      type="file"
-                      ref={editFileInputRef}
-                      onChange={handleEditImageUpload}
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
+                    <div className="mb-3">
+                      <input
+                        type="file"
+                        ref={editFileInputRef}
+                        onChange={handleEditImageUpload}
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
                         onClick={() => editFileInputRef.current?.click()}
                         disabled={editUploading}
-                      className="py-1 px-3 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition text-sm flex items-center gap-1"
-                    >
-                      📷 添加图片
-                    </button>
-                    {editImages.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {editImages.map((url, idx) => (
-                          <div key={idx} className="relative">
-                            <MemoryImage
-                              src={url}
-                              alt={`预览${idx + 1}`}
-                              width={64}
-                              height={64}
-                              sizes="64px"
-                              className="w-16 h-16 object-cover rounded-lg"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveEditImage(idx)}
-                              className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs"
-                            >
-                              ✕
+                        className="py-1 px-3 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition text-sm flex items-center gap-1"
+                      >
+                        Add images
+                      </button>
+                      {editImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {editImages.map((url, idx) => (
+                            <div key={idx} className="relative">
+                              <MemoryImage
+                                src={url}
+                                alt={`Preview ${idx + 1}`}
+                                width={64}
+                                height={64}
+                                sizes="64px"
+                                className="w-16 h-16 object-cover rounded-lg"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEditImage(idx)}
+                                className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full p-3 border border-pink-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-300 bg-white"
+                      rows={4}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        {record.type === 'todo' && (
+                          <button
+                            onClick={() => handleToggleComplete(record.id, record.is_completed || false)}
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${
+                              record.is_completed
+                                ? 'bg-green-400 border-green-400 text-white'
+                                : 'border-gray-300 hover:border-green-400'
+                            }`}
+                          >
+                            {record.is_completed && '✓'}
+                          </button>
+                        )}
+                        <span className={`px-2 py-1 rounded-full text-xs text-white ${getAuthorColor(record.author || 'her')}`}>
+                          {record.author ? getAuthorLabel(record.author) : 'Her'}
+                        </span>
+                        <span className={`text-sm font-medium ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
+                          {getTypeInfo(record.type).emoji} {getTypeInfo(record.type).label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">
+                          {new Date(record.created_at).toLocaleTimeString()}
+                        </span>
+                        <button
+                          onClick={() => handleStartEdit(record)}
+                          className="text-xs text-blue-400 hover:text-blue-600"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRecord(record.id)}
+                          className="text-xs text-red-400 hover:text-red-600"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+
+                    {record.type === 'todo' && record.deadline && (
+                      <div className={`mb-2 text-sm flex items-center gap-2 ${
+                        isOverdue(record) ? 'text-red-500 font-semibold' : 'text-blue-500'
+                      }`}>
+                        <span>Deadline: {formatDeadline(record.deadline)}</span>
+                        {isOverdue(record) && (
+                          <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs">Overdue</span>
+                        )}
+                        {!record.is_completed && (
+                          <input
+                            type="datetime-local"
+                            defaultValue={record.deadline ? record.deadline.slice(0, 16) : ''}
+                            onChange={(e) => handleUpdateDeadline(record.id, e.target.value ? new Date(e.target.value).toISOString() : '')}
+                            className="ml-2 text-xs p-1 border border-gray-200 rounded"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {(record.image_url || record.image_urls) && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {record.image_urls && record.image_urls.length > 0 ? (
+                          record.image_urls.map((url, idx) => (
+                            <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
+                              <MemoryImage
+                                src={url}
+                                alt={`Record image ${idx + 1}`}
+                                width={720}
+                                height={540}
+                                sizes="(max-width: 768px) 100vw, 720px"
+                                className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
+                                <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
+                              </div>
                             </button>
-                          </div>
+                          ))
+                        ) : record.image_url ? (
+                          <button onClick={() => setSelectedImage(record.image_url!)} className="relative group">
+                            <MemoryImage
+                              src={record.image_url}
+                              alt="Record image"
+                              width={720}
+                              height={540}
+                              sizes="(max-width: 768px) 100vw, 720px"
+                              className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
+                              <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
+                            </div>
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+
+                    <p className={`mb-2 ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                      {record.content}
+                    </p>
+
+                    {record.tags && record.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {record.tags.map((tag, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-600 rounded-full text-xs"
+                          >
+                            {tag}
+                            <button
+                              onClick={() => handleRemoveTag(record.id, tag)}
+                              className="ml-1 text-purple-400 hover:text-purple-600"
+                            >
+                              ×
+                            </button>
+                          </span>
                         ))}
                       </div>
                     )}
-                  </div>
 
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full p-3 border border-pink-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-300 bg-white"
-                    rows={4}
-                  />
-                </div>
-              ) : (
-                // Normal display mode
-                <>
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-2">
-                  {/* 待办完成复选框 */}
-                  {record.type === 'todo' && (
                     <button
-                      onClick={() => handleToggleComplete(record.id, record.is_completed || false)}
-                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${
-                        record.is_completed
-                          ? 'bg-green-400 border-green-400 text-white'
-                          : 'border-gray-300 hover:border-green-400'
-                      }`}
+                      onClick={() => handleExtractTags(record.id, record.content, record.image_url)}
+                      disabled={extracting}
+                      className="mt-2 text-sm text-purple-500 hover:text-purple-700 disabled:opacity-50"
                     >
-                      {record.is_completed && '✓'}
+                      {record.tags && record.tags.length > 0 ? 'Re-run tags' : 'Generate tags'}
                     </button>
-                  )}
-                  <span className={`px-2 py-1 rounded-full text-xs text-white ${getAuthorColor(record.author || 'her')}`}>
-                    {record.author ? getAuthorLabel(record.author) : '她'}
-                  </span>
-                  <span className={`text-sm font-medium ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
-                    {getTypeInfo(record.type).emoji} {getTypeInfo(record.type).label}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">
-                    {new Date(record.created_at).toLocaleTimeString()}
-                  </span>
-                  <button
-                    onClick={() => handleStartEdit(record)}
-                    className="text-xs text-blue-400 hover:text-blue-600"
-                  >
-                    ✏️ 编辑
-                  </button>
-                  <button
-                    onClick={() => handleDeleteRecord(record.id)}
-                    className="text-xs text-red-400 hover:text-red-600"
-                  >
-                    🗑️
-                  </button>
-                </div>
+                  </>
+                )}
               </div>
-
-              {/* 待办截止时间显示 */}
-              {record.type === 'todo' && record.deadline && (
-                <div className={`mb-2 text-sm flex items-center gap-2 ${
-                  isOverdue(record) ? 'text-red-500 font-semibold' : 'text-blue-500'
-                }`}>
-                  <span>📅</span>
-                  <span>截止：{formatDeadline(record.deadline)}</span>
-                  {isOverdue(record) && <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs">⚠️ 已超时</span>}
-                  {!record.is_completed && (
-                    <input
-                      type="datetime-local"
-                      defaultValue={record.deadline ? record.deadline.slice(0, 16) : ''}
-                      onChange={(e) => handleUpdateDeadline(record.id, e.target.value ? new Date(e.target.value).toISOString() : '')}
-                      className="ml-2 text-xs p-1 border border-gray-200 rounded"
-                    />
-                  )}
-                </div>
-              )}
-
-              {/* Support both single image and multiple images with click to view */}
-              {(record.image_url || record.image_urls) && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {record.image_urls && record.image_urls.length > 0 ? (
-                    record.image_urls.map((url, idx) => (
-                      <button key={idx} onClick={() => setSelectedImage(url)} className="relative group">
-                        <MemoryImage
-                          src={url}
-                          alt={`记录图片${idx + 1}`}
-                          width={720}
-                          height={540}
-                          sizes="(max-width: 768px) 100vw, 720px"
-                          className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
-                          <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
-                        </div>
-                      </button>
-                    ))
-                  ) : record.image_url ? (
-                    <button onClick={() => setSelectedImage(record.image_url!)} className="relative group">
-                      <MemoryImage
-                        src={record.image_url}
-                        alt="记录图片"
-                        width={720}
-                        height={540}
-                        sizes="(max-width: 768px) 100vw, 720px"
-                        className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
-                      />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-lg flex items-center justify-center">
-                        <span className="opacity-0 group-hover:opacity-100 text-white text-2xl">🔍</span>
-                      </div>
-                    </button>
-                  ) : null}
-                </div>
-              )}
-
-              <p className={`mb-2 ${record.is_completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{record.content}</p>
-
-              {/* Tags Display */}
-              {record.tags && record.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {record.tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-600 rounded-full text-xs"
-                    >
-                      {tag}
-                      <button
-                        onClick={() => handleRemoveTag(record.id, tag)}
-                        className="ml-1 text-purple-400 hover:text-purple-600"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={() => handleExtractTags(record.id, record.content, record.image_url)}
-                disabled={extracting}
-                className="mt-2 text-sm text-purple-500 hover:text-purple-700 disabled:opacity-50"
-              >
-                {record.tags && record.tags.length > 0 ? '✨ 重新分析' : '✨ 智能标签'}
-              </button>
-                </>
-              )}
-            </div>
-          ))}
+            ))}
             {todayRecordsHasMore && (
               <button
                 type="button"
@@ -1222,6 +1085,7 @@ export default function RecordPage() {
           </>
         )}
       </div>
+      </div>
 
       {/* Image Lightbox Modal */}
       {selectedImage && (
@@ -1233,11 +1097,10 @@ export default function RecordPage() {
             className="absolute top-4 right-4 text-white text-3xl hover:text-pink-400 transition"
             onClick={() => setSelectedImage(null)}
           >
-            ✕
-          </button>
+            鉁?          </button>
           <MemoryImage
             src={selectedImage}
-            alt="查看大图"
+            alt="鏌ョ湅澶у浘"
             width={1600}
             height={1200}
             sizes="90vw"
@@ -1248,3 +1111,5 @@ export default function RecordPage() {
     </div>
   );
 }
+
+
