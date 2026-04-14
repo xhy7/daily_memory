@@ -1085,7 +1085,6 @@ export default function RecordPage() {
           </>
         )}
       </div>
-      </div>
 
       {/* Image Lightbox Modal */}
       {selectedImage && (
