@@ -357,7 +357,7 @@ export async function updateMemoryRecord(
 
   // Build dynamic SET clause using parameterized queries
   const setClauses: string[] = [];
-  const values: (string | boolean | null)[] = [];
+  const values: (string | boolean | null | number)[] = [];
   let paramIndex = 1;
 
   if (updates.content !== undefined && allowedColumns.has('content')) {
