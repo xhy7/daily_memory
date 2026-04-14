@@ -350,67 +350,64 @@ export async function updateMemoryRecord(
   }>
 ): Promise<MemoryRecord | null> {
   // Whitelist of allowed column names (prevents SQL injection)
-  const allowedColumns = new Set([
-    'content', 'polished_content', 'image_url', 'image_urls',
-    'tags', 'author', 'is_completed', 'deadline'
-  ]);
+  const allowedColumns = ['content', 'polished_content', 'image_url', 'image_urls', 'tags', 'author', 'is_completed', 'deadline'] as const;
 
-  // Build dynamic SET clause using parameterized queries
-  const setClauses: string[] = [];
-  const values: (string | boolean | null | number)[] = [];
+  // Build dynamic SET clause
+  const setParts: string[] = [];
+  const queryValues: (string | boolean | null | number)[] = [];
   let paramIndex = 1;
 
-  if (updates.content !== undefined && allowedColumns.has('content')) {
-    setClauses.push(`content = $${paramIndex++}`);
-    values.push(updates.content);
+  if (updates.content !== undefined && allowedColumns.includes('content')) {
+    setParts.push(`content = $${paramIndex++}`);
+    queryValues.push(updates.content);
   }
 
-  if (updates.polished_content !== undefined && allowedColumns.has('polished_content')) {
-    setClauses.push(`polished_content = $${paramIndex++}`);
-    values.push(updates.polished_content);
+  if (updates.polished_content !== undefined && allowedColumns.includes('polished_content')) {
+    setParts.push(`polished_content = $${paramIndex++}`);
+    queryValues.push(updates.polished_content);
   }
 
-  if (updates.image_url !== undefined && allowedColumns.has('image_url')) {
-    setClauses.push(`image_url = $${paramIndex++}`);
-    values.push(updates.image_url);
+  if (updates.image_url !== undefined && allowedColumns.includes('image_url')) {
+    setParts.push(`image_url = $${paramIndex++}`);
+    queryValues.push(updates.image_url);
   }
 
-  if (updates.image_urls !== undefined && allowedColumns.has('image_urls')) {
-    setClauses.push(`image_urls = $${paramIndex++}`);
-    values.push(JSON.stringify(updates.image_urls));
+  if (updates.image_urls !== undefined && allowedColumns.includes('image_urls')) {
+    setParts.push(`image_urls = $${paramIndex++}`);
+    queryValues.push(JSON.stringify(updates.image_urls));
   }
 
-  if (updates.tags !== undefined && allowedColumns.has('tags')) {
-    setClauses.push(`tags = $${paramIndex++}`);
-    values.push(JSON.stringify(updates.tags));
+  if (updates.tags !== undefined && allowedColumns.includes('tags')) {
+    setParts.push(`tags = $${paramIndex++}`);
+    queryValues.push(JSON.stringify(updates.tags));
   }
 
-  if (updates.author !== undefined && allowedColumns.has('author')) {
-    setClauses.push(`author = $${paramIndex++}`);
-    values.push(updates.author);
+  if (updates.author !== undefined && allowedColumns.includes('author')) {
+    setParts.push(`author = $${paramIndex++}`);
+    queryValues.push(updates.author);
   }
 
-  if (updates.is_completed !== undefined && allowedColumns.has('is_completed')) {
-    setClauses.push(`is_completed = $${paramIndex++}`);
-    values.push(updates.is_completed);
+  if (updates.is_completed !== undefined && allowedColumns.includes('is_completed')) {
+    setParts.push(`is_completed = $${paramIndex++}`);
+    queryValues.push(updates.is_completed);
   }
 
-  if (updates.deadline !== undefined && allowedColumns.has('deadline')) {
-    setClauses.push(`deadline = $${paramIndex++}`);
-    values.push(updates.deadline);
+  if (updates.deadline !== undefined && allowedColumns.includes('deadline')) {
+    setParts.push(`deadline = $${paramIndex++}`);
+    queryValues.push(updates.deadline);
   }
 
   // Always update timestamp
-  setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+  setParts.push('updated_at = CURRENT_TIMESTAMP');
 
-  values.push(id);
+  queryValues.push(id);
 
-  const result = await sql`
-    UPDATE records
-    SET ${sql.join(setClauses.map(clause => sql`${sql.raw(clause)}`), sql`, `)}
-    WHERE id = $${paramIndex}
-    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
-  `;
+  // Build and execute query using raw SQL with proper escaping
+  const setClause = setParts.join(', ');
+  const result = await sql.query(
+    `UPDATE records SET ${setClause} WHERE id = $${paramIndex} RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at`,
+    queryValues
+  );
 
   if (result.rows.length === 0) {
     return null;
