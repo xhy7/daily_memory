@@ -861,7 +861,7 @@ export default function RecordPage() {
       </form>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-pink-500">Today's Memories</h2>
+        <h2 className="text-xl font-semibold text-pink-500">Today&apos;s Memories</h2>
         {loading ? (
           <p className="text-gray-500">Loading...</p>
         ) : todayRecords.length === 0 ? (
