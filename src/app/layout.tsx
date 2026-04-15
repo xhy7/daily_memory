@@ -1,12 +1,9 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"] });
+import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "每日记忆 - 情侣版",
-  description: "记录我们的甜蜜时光",
+  title: '每日记忆 - 情侣空间',
+  description: '记录你们的甜蜜日常、待办和回忆。',
 };
 
 export default function RootLayout({
@@ -16,7 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className={inter.className}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
