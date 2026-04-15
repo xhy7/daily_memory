@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -17,7 +18,9 @@ export default function InvitePage() {
   useEffect(() => {
     const stored = localStorage.getItem('coupleDeviceId');
     if (!stored) {
-      const newId = `device_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      const newId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? `device_${crypto.randomUUID()}`
+        : `device_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
       localStorage.setItem('coupleDeviceId', newId);
       setDeviceId(newId);
     } else {
@@ -29,7 +32,13 @@ export default function InvitePage() {
     if (!deviceId) return;
 
     try {
+      setError(null);
       const response = await fetch(`/api/couple-space?deviceId=${encodeURIComponent(deviceId)}`);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to load invite code');
+      }
+
       const data = await response.json();
 
       if (data.inviteCode) {
@@ -98,13 +107,14 @@ export default function InvitePage() {
 
   const handleCopy = async () => {
     if (!inviteCode) return;
+
     try {
       await navigator.clipboard.writeText(inviteCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      setError(null);
     } catch {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setError('\u590d\u5236\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u590d\u5236\u9080\u8bf7\u7801');
     }
   };
 
@@ -118,13 +128,13 @@ export default function InvitePage() {
 
       <div className="relative mx-auto max-w-lg">
         <div className="mb-6">
-          <a
+          <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-4 py-2 text-sm font-semibold text-rose-500 shadow-sm backdrop-blur transition hover:bg-white"
           >
             <span>\u2190</span>
             <span>\u8fd4\u56de\u9996\u9875</span>
-          </a>
+          </Link>
         </div>
 
         <section className="overflow-hidden rounded-[28px] border border-white/75 bg-white/72 shadow-[0_28px_70px_-52px_rgba(148,63,117,0.4)] backdrop-blur-xl">

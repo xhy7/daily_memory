@@ -199,9 +199,10 @@ async function queryMemoryRecords(
 ): Promise<MemoryRecordQueryResult> {
   const { localDateToUTC } = await import('./datetime');
 
-  const whereParts: string[] = ['device_id = $1'];
-  const whereValues: Array<string | number> = [deviceId];
-  let nextParamIndex = 2;
+  const { clause: scopeClause, values: scopeValues } = await getRecordScope(deviceId);
+  const whereParts: string[] = [scopeClause];
+  const whereValues: Array<string | number> = [...scopeValues];
+  let nextParamIndex = whereValues.length + 1;
 
   if (options.date) {
     const { start, end } = localDateToUTC(options.date, options.timezone || 'Asia/Shanghai');
@@ -400,11 +401,12 @@ export async function createMemoryRecord(
   const imageUrlsJson = Array.isArray(imageUrls) && imageUrls.length > 0
     ? JSON.stringify(imageUrls)
     : '[]';
+  const coupleSpaceId = await resolveDeviceIdToCoupleSpaceId(deviceId);
 
   const result = await sql`
-    INSERT INTO records (device_id, type, content, image_url, image_urls, author, tags, is_completed, deadline)
-    VALUES (${deviceId}, ${type}, ${content}, ${imageUrl}, ${imageUrlsJson}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'}, ${isCompleted || false}, ${deadline || null})
-    RETURNING id, device_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
+    INSERT INTO records (device_id, couple_space_id, type, content, image_url, image_urls, author, tags, is_completed, deadline)
+    VALUES (${deviceId}, ${coupleSpaceId || null}, ${type}, ${content}, ${imageUrl}, ${imageUrlsJson}, ${author || null}, ${tags ? JSON.stringify(tags) : '[]'}, ${isCompleted || false}, ${deadline || null})
+    RETURNING id, device_id, couple_space_id, type, content, polished_content, image_url, image_urls, tags, author, is_completed, deadline, created_at, updated_at
   `;
 
   const row = result.rows[0];
@@ -465,20 +467,21 @@ export async function getMemoryRecordCalendarSummary(
 ): Promise<CalendarDaySummary[]> {
   const { localMonthToUTC } = await import('./datetime');
   const { start, end } = localMonthToUTC(month, timezone);
+  const { clause: scopeClause, values: scopeValues } = await getRecordScope(deviceId);
 
   const result = await sql.query(
     `
       SELECT
-        TO_CHAR((created_at AT TIME ZONE 'UTC' AT TIME ZONE $4), 'YYYY-MM-DD') AS date,
+        TO_CHAR((created_at AT TIME ZONE 'UTC' AT TIME ZONE $${scopeValues.length + 3}), 'YYYY-MM-DD') AS date,
         COUNT(*)::int AS count
       FROM records
-      WHERE device_id = $1
-        AND created_at >= $2
-        AND created_at <= $3
+      WHERE ${scopeClause}
+        AND created_at >= $${scopeValues.length + 1}
+        AND created_at <= $${scopeValues.length + 2}
       GROUP BY 1
       ORDER BY 1 DESC
     `,
-    [deviceId, start.toISOString(), end.toISOString(), timezone]
+    [...scopeValues, start.toISOString(), end.toISOString(), timezone]
   );
 
   return result.rows.map((row) => ({
@@ -702,6 +705,56 @@ function generateInviteCode(): string {
   return code;
 }
 
+async function getRecordScope(deviceId: string): Promise<{ clause: string; values: Array<string | number> }> {
+  const coupleSpaceId = await resolveDeviceIdToCoupleSpaceId(deviceId);
+
+  if (coupleSpaceId) {
+    return {
+      clause:
+        '(couple_space_id = $1 OR (couple_space_id IS NULL AND device_id IN (SELECT device_id FROM users WHERE couple_space_id = $1)))',
+      values: [coupleSpaceId],
+    };
+  }
+
+  return {
+    clause: 'device_id = $1',
+    values: [deviceId],
+  };
+}
+
+async function assignRecordsToCoupleSpace(
+  deviceId: string,
+  coupleSpaceId: number,
+  previousCoupleSpaceId?: number | null
+): Promise<void> {
+  const values: Array<string | number> = [coupleSpaceId, deviceId];
+  let query = `
+    UPDATE records
+    SET couple_space_id = $1
+    WHERE device_id = $2
+      AND (couple_space_id IS NULL
+  `;
+
+  if (typeof previousCoupleSpaceId === 'number') {
+    values.push(previousCoupleSpaceId);
+    query += ` OR couple_space_id = $3`;
+  }
+
+  query += ')';
+
+  await sql.query(query, values);
+}
+
+async function getCoupleSpaceMemberCount(coupleSpaceId: number): Promise<number> {
+  const result = await sql`
+    SELECT COUNT(*)::int AS count
+    FROM users
+    WHERE couple_space_id = ${coupleSpaceId}
+  `;
+
+  return Number(result.rows[0]?.count || 0);
+}
+
 export async function createCoupleSpace(deviceId: string, name?: string): Promise<{ coupleSpace: CoupleSpace; user: User }> {
   // Generate unique invite code
   let inviteCode: string | undefined;
@@ -748,6 +801,7 @@ export async function createCoupleSpace(deviceId: string, name?: string): Promis
   }
 
   const user = userResult.rows[0] as unknown as User;
+  await assignRecordsToCoupleSpace(deviceId, coupleSpace.id);
 
   return { coupleSpace, user };
 }
@@ -770,6 +824,21 @@ export async function joinCoupleSpace(deviceId: string, inviteCode: string): Pro
   // Check if user already exists
   const existingUser = await getUserByDeviceId(deviceId);
   if (existingUser) {
+    if (existingUser.couple_space_id === coupleSpace.id) {
+      await assignRecordsToCoupleSpace(deviceId, coupleSpace.id);
+      return {
+        coupleSpace,
+        user: existingUser,
+      };
+    }
+
+    if (existingUser.couple_space_id) {
+      const memberCount = await getCoupleSpaceMemberCount(existingUser.couple_space_id);
+      if (memberCount > 1) {
+        throw new Error('DEVICE_ALREADY_IN_OTHER_SPACE');
+      }
+    }
+
     // Update existing user's couple_space_id
     const updatedUser = await sql`
       UPDATE users SET couple_space_id = ${coupleSpace.id}
@@ -777,6 +846,7 @@ export async function joinCoupleSpace(deviceId: string, inviteCode: string): Pro
       RETURNING id, couple_space_id, device_id, nickname, created_at
     `;
     if (updatedUser.rows[0]) {
+      await assignRecordsToCoupleSpace(deviceId, coupleSpace.id, existingUser.couple_space_id);
       return {
         coupleSpace,
         user: updatedUser.rows[0] as unknown as User,
@@ -790,6 +860,7 @@ export async function joinCoupleSpace(deviceId: string, inviteCode: string): Pro
     RETURNING id, couple_space_id, device_id, nickname, created_at
   `;
   const user = userResult.rows[0] as unknown as User;
+  await assignRecordsToCoupleSpace(deviceId, coupleSpace.id);
 
   return { coupleSpace, user };
 }
@@ -818,6 +889,7 @@ export async function getOrCreateCoupleSpace(deviceId: string): Promise<{ couple
   if (existingUser && existingUser.couple_space_id) {
     const coupleSpace = await getCoupleSpaceById(existingUser.couple_space_id);
     if (coupleSpace) {
+      await assignRecordsToCoupleSpace(deviceId, coupleSpace.id);
       return { coupleSpace, user: existingUser };
     }
   }

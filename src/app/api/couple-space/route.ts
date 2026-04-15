@@ -32,7 +32,20 @@ export async function POST(request: NextRequest) {
 
     // If inviteCode is provided, try to join existing space
     if (inviteCode) {
-      const result = await joinCoupleSpace(deviceId, inviteCode);
+      let result: Awaited<ReturnType<typeof joinCoupleSpace>>;
+      try {
+        result = await joinCoupleSpace(deviceId, inviteCode);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'DEVICE_ALREADY_IN_OTHER_SPACE') {
+          return NextResponse.json(
+            { error: 'Device already belongs to another couple space' },
+            { status: 409 }
+          );
+        }
+
+        throw error;
+      }
+
       if (!result) {
         return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 });
       }
