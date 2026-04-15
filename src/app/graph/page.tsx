@@ -68,7 +68,7 @@ function GraphSkeleton() {
         <div className="w-16 h-16 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform text-pink-400 text-2xl">💗</div>
       </div>
-      <div className="text-pink-400 text-xl mt-4">加载 3D 图谱中...</div>
+      <div className="font-accent-art text-pink-400 text-xl mt-4">加载 3D 图谱中...</div>
       <div className="text-gray-500 text-sm mt-2">正在构建你们的回忆星系</div>
     </div>
   );
@@ -283,7 +283,7 @@ export default function GraphPage() {
       ) : records.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900">
           <div className="text-6xl mb-4">💗</div>
-          <div className="text-pink-400 text-xl mb-2">还没有记录</div>
+          <div className="font-accent-art text-pink-400 text-xl mb-2">还没有记录</div>
           <div className="text-gray-400 text-sm mb-6">先去记录一些甜蜜回忆吧</div>
           <button
             onClick={() => router.push('/record')}

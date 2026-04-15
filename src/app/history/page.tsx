@@ -438,7 +438,7 @@ export default function HistoryPage() {
   return (
     <div className="min-h-screen p-4 max-w-2xl mx-auto pb-10">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+        <h1 className="font-display-art text-2xl bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
           💗 甜蜜回忆
         </h1>
         <button onClick={() => router.push('/')} className="text-pink-400 hover:text-pink-500">
@@ -451,7 +451,7 @@ export default function HistoryPage() {
           <button onClick={prevMonth} className="p-2 hover:bg-pink-50 rounded-full text-pink-400 transition">
             ◀
           </button>
-          <span className="text-lg font-semibold text-pink-500">
+          <span className="font-poetic-art text-lg text-pink-500">
             {currentDate.getFullYear()} 年 {monthNames[currentDate.getMonth()]}
           </span>
           <button onClick={nextMonth} className="p-2 hover:bg-pink-50 rounded-full text-pink-400 transition">
@@ -492,7 +492,7 @@ export default function HistoryPage() {
 
       {selectedDate && (
         <div>
-          <h2 className="text-xl font-semibold mb-4 text-pink-500 flex items-center gap-2">
+          <h2 className="font-accent-art text-xl mb-4 text-pink-500 flex items-center gap-2">
             📅 {selectedDate} 的甜蜜回忆
           </h2>
           {dayLoading ? (

@@ -625,7 +625,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <h1 className="mt-5 max-w-xl text-3xl font-black leading-tight text-slate-900 sm:text-4xl lg:text-[3.15rem] lg:leading-[1.06]">
+              <h1 className="font-display-art mt-5 max-w-xl text-3xl leading-tight text-slate-900 sm:text-4xl lg:text-[3.15rem] lg:leading-[1.06]">
                 把普通的一天
                 <span className="mt-2 block bg-gradient-to-r from-rose-500 via-pink-500 to-amber-500 bg-clip-text text-transparent">
                   过成值得回看的回忆
@@ -659,7 +659,7 @@ export default function Home() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-400">你们</p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-900">把你们的名字留在这里</h2>
+                  <h2 className="font-accent-art mt-2 text-xl text-slate-900">把你们的名字留在这里</h2>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
                     换上头像，写下称呼，这一页就更像你们。
                   </p>
@@ -757,7 +757,7 @@ export default function Home() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">今天</p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">今天留下了什么</h2>
+                <h2 className="font-accent-art mt-2 text-xl text-slate-900">今天留下了什么</h2>
               </div>
               <Link href="/record" className="text-sm font-semibold text-rose-500 transition hover:text-rose-600">
                 去记录 →
@@ -790,7 +790,7 @@ export default function Home() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">最近写下的</p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">刚刚留下的片段，都在这里</h2>
+                <h2 className="font-accent-art mt-2 text-xl text-slate-900">刚刚留下的片段，都在这里</h2>
               </div>
               <Link href="/history" className="text-sm font-semibold text-slate-700 transition hover:text-slate-900">
                 去回看 →
@@ -888,7 +888,7 @@ export default function Home() {
               <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
                 {action.eyebrow}
               </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-800">{action.title}</h2>
+              <h2 className="font-accent-art mt-2 text-xl text-slate-800">{action.title}</h2>
               <p className="mt-3 text-sm leading-7 text-slate-600">{action.description}</p>
               <div className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <span>进入</span>

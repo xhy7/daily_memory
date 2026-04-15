@@ -343,7 +343,7 @@ export default function InvitePage() {
 
         <section className="overflow-hidden rounded-[28px] border border-white/75 bg-white/72 shadow-[0_28px_70px_-52px_rgba(148,63,117,0.4)] backdrop-blur-xl">
           <div className="px-6 py-8 sm:px-8 sm:py-10">
-            <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">邀请与访问</h1>
+            <h1 className="font-display-art text-2xl text-slate-900 sm:text-3xl">邀请与访问</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               邀请、加入、申请访问和处理外部申请，都集中放在这里。
             </p>
@@ -376,7 +376,7 @@ export default function InvitePage() {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
                       直接加入
                     </p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-900">进入同一个记录空间</h2>
+                    <h2 className="font-accent-art mt-2 text-lg text-slate-900">进入同一个记录空间</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
                       输入邀请码后，会直接加入对方的空间并共享记录内容。
                     </p>
@@ -405,7 +405,7 @@ export default function InvitePage() {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
                       申请访问
                     </p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-900">先申请只读查看</h2>
+                    <h2 className="font-accent-art mt-2 text-lg text-slate-900">先申请只读查看</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
                       申请时需要填写你的昵称和对方的邀请码，对方同意后才能进入浏览。
                     </p>
@@ -460,7 +460,7 @@ export default function InvitePage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">收到的申请</p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">外部访问申请</h2>
+                <h2 className="font-accent-art mt-2 text-xl text-slate-900">外部访问申请</h2>
               </div>
               <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-600">
                 {pendingIncomingRequests.length}
@@ -562,7 +562,7 @@ export default function InvitePage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">我发出的申请</p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">访问状态</h2>
+                <h2 className="font-accent-art mt-2 text-xl text-slate-900">访问状态</h2>
               </div>
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                 {outgoingRequests.length}

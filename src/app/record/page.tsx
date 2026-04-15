@@ -533,7 +533,7 @@ export default function RecordPage() {
   return (
     <div className="min-h-screen p-4 max-w-2xl mx-auto pb-20">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+        <h1 className="font-display-art text-2xl bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
           {'\ud83d\udc95'} {'\u8bb0\u5f55\u4eca\u65e5'}
         </h1>
         <button type="button" onClick={() => router.push('/')} className="text-pink-400 hover:text-pink-500">
@@ -652,7 +652,7 @@ export default function RecordPage() {
       </form>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-pink-500">{'\u4eca\u5929\u7684\u8bb0\u5f55'}</h2>
+        <h2 className="font-accent-art text-xl text-pink-500">{'\u4eca\u5929\u7684\u8bb0\u5f55'}</h2>
         {loading ? (
           <p className="text-gray-500">{'\u52a0\u8f7d\u4e2d...'}</p>
         ) : todayRecords.length === 0 ? (

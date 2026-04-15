@@ -7,6 +7,28 @@
   --background-start-rgb: 255, 250, 250;
   --background-mid-rgb: 255, 245, 246;
   --background-end-rgb: 255, 249, 245;
+  --font-body:
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    'Noto Sans SC',
+    system-ui,
+    sans-serif;
+  --font-display:
+    'STKaiti',
+    'KaiTi',
+    'Kaiti SC',
+    'DFKai-SB',
+    'Baskerville',
+    'Times New Roman',
+    serif;
+  --font-accent:
+    'Songti SC',
+    'STSong',
+    'Noto Serif SC',
+    'Source Han Serif SC',
+    'SimSun',
+    serif;
 }
 
 body {
@@ -23,6 +45,9 @@ body {
     );
   min-height: 100vh;
   font-feature-settings: 'kern' 1;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body::before {
@@ -40,4 +65,27 @@ body::before {
 ::selection {
   background: rgba(244, 114, 182, 0.22);
   color: rgb(var(--foreground-rgb));
+}
+
+@layer utilities {
+  .font-display-art {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.15;
+  }
+
+  .font-accent-art {
+    font-family: var(--font-accent);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    line-height: 1.25;
+  }
+
+  .font-poetic-art {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    line-height: 1.2;
+  }
 }
