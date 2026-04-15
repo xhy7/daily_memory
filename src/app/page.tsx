@@ -53,21 +53,6 @@ const ACTIONS = [
   },
 ] as const;
 
-const SUMMARY_ITEMS = [
-  {
-    label: '\u8bb0\u5f55\u65b9\u5f0f',
-    value: '\u6587\u5b57\u3001\u56fe\u7247\u3001\u5f85\u529e',
-  },
-  {
-    label: '\u9875\u9762\u8282\u594f',
-    value: '\u4eca\u65e5\u8f93\u5165\uff0c\u5386\u53f2\u56de\u770b',
-  },
-  {
-    label: '\u4f7f\u7528\u611f\u53d7',
-    value: '\u6e29\u67d4\u3001\u5e72\u51c0\u3001\u5bb9\u6613\u4e0b\u624b',
-  },
-] as const;
-
 const GUIDES = [
   '\u4eca\u5929\u6700\u60f3\u88ab\u7559\u4e0b\u7684\u4e00\u5e55',
   '\u4f60\u4eec\u4e4b\u95f4\u6700\u6696\u7684\u4e00\u53e5\u8bdd',
@@ -330,10 +315,7 @@ export default function Home() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-400">
-                    {'\u4e3b\u9875\u5c55\u793a'}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {'\u5e72\u51c0\u4e00\u70b9\uff0c\u66f4\u9002\u5408\u5929\u5929\u6253\u5f00'}
+                    {'\u6211\u4eec\u7684\u8bb0\u5fc6'}
                   </p>
                 </div>
 
@@ -413,33 +395,6 @@ export default function Home() {
               </div>
             </Link>
           ))}
-        </section>
-
-        <section className="mt-5 rounded-[26px] border border-white/80 bg-white/72 px-5 py-5 shadow-[0_20px_55px_-45px_rgba(15,23,42,0.35)] backdrop-blur-xl sm:px-6 sm:py-6">
-          <div className="grid gap-4 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                {'\u9996\u9875\u5c0f\u63d0\u9192'}
-              </p>
-              <p className="mt-2 text-lg font-semibold leading-8 text-slate-800">
-                {'\u6700\u597d\u7684\u56de\u5fc6\u5f80\u5f80\u4e0d\u9700\u8981\u5199\u5f97\u5f88\u5927\uff0c\u53ea\u8981\u5728\u90a3\u4e2a\u65f6\u5019\u88ab\u597d\u597d\u7559\u4e0b\u3002'}
-              </p>
-              <p className="mt-2 text-sm leading-7 text-slate-600">
-                {'\u6240\u4ee5\u9996\u9875\u53ea\u4fdd\u7559\u6700\u91cd\u8981\u7684\u5165\u53e3\u548c\u63d0\u793a\uff0c\u8ba9\u4f60\u4eec\u5728\u624b\u673a\u4e0a\u4e5f\u80fd\u5f88\u5feb\u8fdb\u5165\u8bb0\u5f55\u72b6\u6001\u3002'}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              {GUIDES.map((guide) => (
-                <div
-                  key={`${guide}-summary`}
-                  className="rounded-2xl border border-white/80 bg-white/80 px-4 py-4 text-sm leading-6 text-slate-600 shadow-sm"
-                >
-                  {guide}
-                </div>
-              ))}
-            </div>
-          </div>
         </section>
       </div>
     </main>
