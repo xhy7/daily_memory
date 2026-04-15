@@ -87,28 +87,28 @@ const EMPTY_STATS: StatsState = {
 const ACTIONS = [
   {
     href: '/record',
-    eyebrow: '\u5feb\u901f\u8bb0\u4e00\u7b14',
-    title: '\u8bb0\u5f55\u4eca\u65e5',
+    eyebrow: '写下今天',
+    title: '记录今天',
     description:
-      '\u628a\u4eca\u5929\u7684\u5fc3\u60c5\u3001\u5bf9\u8bdd\u3001\u7167\u7247\u548c\u5f85\u529e\u7b80\u6d01\u5730\u8bb0\u4e0b\u6765\u3002',
+      '把对话、心情和照片轻轻记下，让今天有迹可循。',
     accentClass: 'bg-rose-100 text-rose-500',
     icon: '01',
   },
   {
     href: '/history',
-    eyebrow: '\u6339\u65f6\u95f4\u56de\u770b',
-    title: '\u6d4f\u89c8\u56de\u5fc6',
+    eyebrow: '按时间翻看',
+    title: '回看日常',
     description:
-      '\u6309\u65e5\u671f\u628a\u4f60\u4eec\u7684\u76f8\u5904\u7247\u6bb5\u7a7f\u8d77\u6765\uff0c\u5f88\u5feb\u5c31\u80fd\u627e\u5230\u90a3\u5929\u3002',
+      '按日期翻看你们留下的片段，很快就能找到那一天。',
     accentClass: 'bg-amber-100 text-amber-600',
     icon: '02',
   },
   {
     href: '/graph',
-    eyebrow: '\u770b\u5173\u7cfb\u8109\u7edc',
-    title: '3D \u56de\u5fc6\u56fe\u8c31',
+    eyebrow: '换个角度',
+    title: '3D 回忆图谱',
     description:
-      '\u7528\u65f6\u95f4\u3001\u6807\u7b7e\u548c\u60c5\u7eea\u628a\u8bb0\u5f55\u8fde\u6210\u7ebf\uff0c\u66f4\u76f4\u89c2\u5730\u770b\u5230\u53d8\u5316\u3002',
+      '把时间、情绪和标签连起来，换一种方式看看这段时间。',
     accentClass: 'bg-sky-100 text-sky-600',
     icon: '3D',
   },
@@ -617,7 +617,7 @@ export default function Home() {
               <div className="flex flex-wrap items-center gap-3">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/85 bg-white/85 px-4 py-2 text-[11px] font-semibold tracking-[0.28em] text-rose-500 shadow-sm">
                   <span>✦</span>
-                  <span>情侣共享记忆册</span>
+                  <span>一起写的日常</span>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-rose-100 bg-rose-50/85 px-3 py-1.5 text-xs text-rose-500">
                   <span>{greeting.emoji}</span>
@@ -633,8 +633,8 @@ export default function Home() {
               </h1>
 
               <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base sm:leading-8">
-                你们的头像、名字、记录和邀请码都放在同一个共享空间里。
-                首页先看今天的状态，再决定是继续记录、回看回忆，还是去邀请另一台设备加入。
+                把对话、照片和心情慢慢写下，日子就有了回看的意义。
+                那些看似平常的小事，也会在以后发亮。
               </p>
 
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -650,7 +650,7 @@ export default function Home() {
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/85 bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white sm:min-w-[156px]"
                 >
                   <span>🔎</span>
-                  <span>浏览回忆</span>
+                  <span>回看日常</span>
                 </Link>
               </div>
             </div>
@@ -658,10 +658,10 @@ export default function Home() {
             <div className="rounded-[26px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,248,250,0.98),rgba(255,255,255,0.96))] p-5 shadow-[0_20px_60px_-46px_rgba(148,63,117,0.35)] sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-400">共享资料</p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-900">头像和姓名会同步到同一情侣空间</h2>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-400">你们</p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900">把你们的名字留在这里</h2>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    在任意已加入空间的设备上修改，这里都会同步更新。
+                    换上头像，写下称呼，这一页就更像你们。
                   </p>
                 </div>
 
@@ -669,7 +669,7 @@ export default function Home() {
                   href="/invite"
                   className="min-w-[132px] rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-left shadow-sm transition hover:bg-amber-50"
                 >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-500">邀请码</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-500">邀请对方</p>
                   <p className="mt-2 text-lg font-bold tracking-[0.14em] text-amber-600">{inviteCode || '------'}</p>
                 </Link>
               </div>
@@ -737,9 +737,9 @@ export default function Home() {
               </div>
 
               <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-500 shadow-sm">
-                <p>当前显示：{partnerAName} 与 {partnerBName}</p>
+                <p>{partnerAName} 和 {partnerBName}，会慢慢把这里写成自己的样子。</p>
                 <Link href="/invite" className="font-semibold text-rose-500 transition hover:text-rose-600">
-                  管理邀请码 →
+                  查看邀请方式 →
                 </Link>
               </div>
 
@@ -756,8 +756,8 @@ export default function Home() {
           <div className="rounded-[28px] border border-white/80 bg-white/82 p-5 shadow-[0_24px_70px_-54px_rgba(15,23,42,0.3)] backdrop-blur-xl sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">快速状态</p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">先看今天，再决定下一步</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">今天</p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-900">今天留下了什么</h2>
               </div>
               <Link href="/record" className="text-sm font-semibold text-rose-500 transition hover:text-rose-600">
                 去记录 →
@@ -766,15 +766,15 @@ export default function Home() {
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-400">今日记录</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-400">今天写下的</p>
                 <p className="mt-3 text-3xl font-black text-rose-500">{stats.todayCount}</p>
               </div>
               <div className="rounded-2xl border border-pink-100 bg-pink-50/70 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-pink-400">总记录</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-pink-400">回忆总数</p>
                 <p className="mt-3 text-3xl font-black text-pink-500">{stats.totalCount}</p>
               </div>
               <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-500">未完成待办</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-500">待完成</p>
                 <p className="mt-3 text-3xl font-black text-sky-600">{stats.todoCount}</p>
               </div>
             </div>
@@ -789,11 +789,11 @@ export default function Home() {
           <div className="rounded-[28px] border border-white/80 bg-white/82 p-5 shadow-[0_24px_70px_-54px_rgba(15,23,42,0.3)] backdrop-blur-xl sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">最近内容</p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">不用翻页，也能先看到最近发生了什么</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">最近写下的</p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-900">刚刚留下的片段，都在这里</h2>
               </div>
               <Link href="/history" className="text-sm font-semibold text-slate-700 transition hover:text-slate-900">
-                查看全部 →
+                去回看 →
               </Link>
             </div>
 
@@ -858,15 +858,15 @@ export default function Home() {
               </div>
             ) : (
               <div className="mt-5 rounded-3xl border border-dashed border-rose-200 bg-rose-50/65 px-5 py-8 text-center">
-                <p className="text-lg font-semibold text-slate-800">今天还没有留下新的记录</p>
+                <p className="text-lg font-semibold text-slate-800">今天还空着，从一句话开始也很好</p>
                 <p className="mt-2 text-sm leading-7 text-slate-500">
-                  从一句话、一张照片，或者一个小待办开始，后面都会慢慢长成回忆。
+                  写下一句心情、一张照片，今天就会慢慢有了形状。
                 </p>
                 <Link
                   href="/record"
                   className="mt-5 inline-flex items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-rose-500 shadow-sm transition hover:bg-rose-50"
                 >
-                  去写下第一条
+                  写下今天
                 </Link>
               </div>
             )}
