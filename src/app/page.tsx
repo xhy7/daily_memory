@@ -52,21 +52,6 @@ type StatsState = {
   todoCount: number;
 };
 
-type AccessRequestStatus = 'pending' | 'approved' | 'active' | 'rejected' | 'revoked' | 'expired';
-
-type IncomingAccessRequest = {
-  id: number;
-  requester_name: string;
-  status: AccessRequestStatus;
-  created_at: string;
-  first_access_at?: string | null;
-  access_expires_at?: string | null;
-};
-
-type AccessRequestsResponse = {
-  requests: IncomingAccessRequest[];
-};
-
 type LegacyNameFallbacks = Record<ProfileSlot, string | null>;
 
 type AvatarCardProps = {
@@ -183,24 +168,6 @@ function formatRecordTime(value: string) {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(
     date.getMinutes()
   ).padStart(2, '0')}`;
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) {
-    return '';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
 }
 
 function truncateText(text: string, maxLength: number) {
@@ -433,9 +400,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
-  const [incomingAccessRequests, setIncomingAccessRequests] = useState<IncomingAccessRequest[]>([]);
-  const [accessMessage, setAccessMessage] = useState<string | null>(null);
-  const [updatingAccessRequestId, setUpdatingAccessRequestId] = useState<number | null>(null);
   const [greeting] = useState(getTimeGreeting);
   const avatarInputRefs = useRef<Record<ProfileSlot, HTMLInputElement | null>>({
     partnerA: null,
@@ -449,7 +413,7 @@ export default function Home() {
   const loadHomeData = useCallback(async (currentDeviceId: string) => {
     const today = formatDay(new Date());
 
-    const [spaceData, todayData, totalData, recentData, todoCount, accessRequestsData] = await Promise.all([
+    const [spaceData, todayData, totalData, recentData, todoCount] = await Promise.all([
       requestJson<CoupleSpaceResponse>(`/api/couple-space?deviceId=${encodeURIComponent(currentDeviceId)}`),
       requestJson<HomeRecordResponse>(
         `/api/records?deviceId=${encodeURIComponent(currentDeviceId)}&date=${today}&limit=1&fields=id&includeTotal=1`
@@ -463,9 +427,6 @@ export default function Home() {
         )}&limit=3&fields=id,type,content,image_url,image_urls,tags,author,is_completed,created_at`
       ),
       fetchIncompleteTodoCount(currentDeviceId),
-      requestJson<AccessRequestsResponse>(
-        `/api/access-requests?deviceId=${encodeURIComponent(currentDeviceId)}&scope=incoming`
-      ),
     ]);
 
     setProfiles(mergeProfiles(spaceData.profiles, legacyNamesRef.current));
@@ -476,7 +437,6 @@ export default function Home() {
       todoCount,
     });
     setRecentRecords(recentData.records || []);
-    setIncomingAccessRequests(accessRequestsData.requests || []);
   }, []);
 
   useEffect(() => {
@@ -639,55 +599,8 @@ export default function Home() {
     avatarInputRefs.current[slot]?.click();
   }, []);
 
-  const handleAccessRequestAction = useCallback(
-    async (requestId: number, action: 'approve' | 'reject' | 'revoke') => {
-      if (!deviceId) {
-        return;
-      }
-
-      setUpdatingAccessRequestId(requestId);
-      setAccessMessage(null);
-
-      try {
-        await requestJson('/api/access-requests', {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            deviceId,
-            requestId,
-            action,
-          }),
-        });
-
-        const refreshed = await requestJson<AccessRequestsResponse>(
-          `/api/access-requests?deviceId=${encodeURIComponent(deviceId)}&scope=incoming`
-        );
-
-        setIncomingAccessRequests(refreshed.requests || []);
-        setAccessMessage(
-          action === 'approve'
-            ? '访问申请已同意。'
-            : action === 'reject'
-              ? '访问申请已拒绝。'
-              : '访问权限已撤销。'
-        );
-      } catch (error) {
-        setAccessMessage(error instanceof Error ? error.message : '访问申请处理失败');
-      } finally {
-        setUpdatingAccessRequestId(null);
-      }
-    },
-    [deviceId]
-  );
-
   const partnerAName = getDisplayName(profiles.partnerA.name, DEFAULT_PROFILE_NAMES.partnerA);
   const partnerBName = getDisplayName(profiles.partnerB.name, DEFAULT_PROFILE_NAMES.partnerB);
-  const pendingAccessRequests = incomingAccessRequests.filter((request) => request.status === 'pending');
-  const grantedAccessRequests = incomingAccessRequests.filter(
-    (request) => request.status === 'approved' || request.status === 'active'
-  );
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -958,135 +871,6 @@ export default function Home() {
               </div>
             )}
           </div>
-        </section>
-
-        <section className="rounded-[28px] border border-white/80 bg-white/82 p-5 shadow-[0_24px_70px_-54px_rgba(15,23,42,0.3)] backdrop-blur-xl sm:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">访问申请</p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-900">谁在申请查看这里</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                同意后，对方会获得一次限时只读访问，可以查看首页、历史和 3D 视图。
-              </p>
-            </div>
-
-            <Link
-              href="/access"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              <span>查看我的访问记录</span>
-              <span>→</span>
-            </Link>
-          </div>
-
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-slate-900">待处理</h3>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-amber-600 shadow-sm">
-                  {pendingAccessRequests.length}
-                </span>
-              </div>
-
-              {pendingAccessRequests.length > 0 ? (
-                <div className="mt-4 space-y-3">
-                  {pendingAccessRequests.map((request) => (
-                    <div key={request.id} className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{request.requester_name}</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            申请时间：{formatDateTime(request.created_at) || '刚刚'}
-                          </p>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void handleAccessRequestAction(request.id, 'approve')}
-                            disabled={updatingAccessRequestId === request.id}
-                            className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {updatingAccessRequestId === request.id ? '处理中...' : '同意'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleAccessRequestAction(request.id, 'reject')}
-                            disabled={updatingAccessRequestId === request.id}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            拒绝
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-2xl border border-dashed border-amber-200 bg-white/80 px-4 py-6 text-sm leading-6 text-slate-500">
-                  现在还没有新的访问申请。
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-slate-900">已开放</h3>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-sky-600 shadow-sm">
-                  {grantedAccessRequests.length}
-                </span>
-              </div>
-
-              {grantedAccessRequests.length > 0 ? (
-                <div className="mt-4 space-y-3">
-                  {grantedAccessRequests.map((request) => (
-                    <div key={request.id} className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold text-slate-900">{request.requester_name}</p>
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                request.status === 'active'
-                                  ? 'bg-emerald-50 text-emerald-600'
-                                  : 'bg-sky-50 text-sky-600'
-                              }`}
-                            >
-                              {request.status === 'active' ? '访问中' : '待进入'}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {request.status === 'active'
-                              ? `截止时间：${formatDateTime(request.access_expires_at) || '即将到期'}`
-                              : `批准后等待进入：${formatDateTime(request.created_at) || '刚刚'}`}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => void handleAccessRequestAction(request.id, 'revoke')}
-                          disabled={updatingAccessRequestId === request.id}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {updatingAccessRequestId === request.id ? '处理中...' : '撤销'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-2xl border border-dashed border-sky-200 bg-white/80 px-4 py-6 text-sm leading-6 text-slate-500">
-                  还没有已开放的访问记录。
-                </div>
-              )}
-            </div>
-          </div>
-
-          {accessMessage ? (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              {accessMessage}
-            </div>
-          ) : null}
         </section>
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
