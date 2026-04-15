@@ -3,17 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 255, 240, 245;
-  --background-end-rgb: 255, 228, 240;
+  --foreground-rgb: 35, 24, 39;
+  --background-start-rgb: 255, 247, 250;
+  --background-mid-rgb: 255, 238, 244;
+  --background-end-rgb: 255, 245, 236;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      rgb(var(--background-start-rgb)),
-      rgb(var(--background-end-rgb))
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 201, 220, 0.45), transparent 24%),
+    radial-gradient(circle at 88% 16%, rgba(255, 225, 185, 0.35), transparent 22%),
+    radial-gradient(circle at 50% 80%, rgba(255, 214, 226, 0.26), transparent 28%),
+    linear-gradient(
+      180deg,
+      rgb(var(--background-start-rgb)) 0%,
+      rgb(var(--background-mid-rgb)) 48%,
+      rgb(var(--background-end-rgb)) 100%
     );
   min-height: 100vh;
+  font-feature-settings: 'kern' 1;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.15) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(circle at center, black 36%, transparent 86%);
+  opacity: 0.35;
+  z-index: -1;
+}
+
+::selection {
+  background: rgba(244, 114, 182, 0.22);
+  color: rgb(var(--foreground-rgb));
 }

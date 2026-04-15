@@ -8,7 +8,7 @@ type MemoryType = 'sweet_interaction' | 'todo' | 'feeling' | 'reflection';
 
 interface MemoryItem {
   id: number;
-  type: string;
+  type: MemoryType;
   content: string;
   image_url?: string;
   image_urls?: string[];
@@ -131,11 +131,17 @@ export default function RecordPage() {
   const [editImages, setEditImages] = useState<string[]>([]);
   const [editUploading, setEditUploading] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingRecordIds, setDeletingRecordIds] = useState<number[]>([]);
+  const [togglingRecordIds, setTogglingRecordIds] = useState<number[]>([]);
+  const [removingTagKeys, setRemovingTagKeys] = useState<string[]>([]);
+  const recordsLengthRef = useRef(0);
 
   useEffect(() => {
     let storedDeviceId = localStorage.getItem('coupleDeviceId');
     if (!storedDeviceId) {
-      storedDeviceId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      storedDeviceId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       localStorage.setItem('coupleDeviceId', storedDeviceId);
     }
 
@@ -146,12 +152,20 @@ export default function RecordPage() {
     }
   }, []);
 
+  useEffect(() => {
+    recordsLengthRef.current = todayRecords.length;
+  }, [todayRecords.length]);
+
   const fetchTodayRecords = useCallback(async (append: boolean) => {
-    const currentOffset = append ? todayRecords.length : 0;
+    const currentOffset = append ? recordsLengthRef.current : 0;
     const url = `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${formatDay(new Date())}&limit=${PAGE_SIZE}&offset=${currentOffset}&fields=id,type,content,image_url,image_urls,tags,author,is_completed,deadline,created_at`;
 
     try {
-      append ? setLoadingMore(true) : setLoading(true);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
       const response = await fetch(url);
       const data = await response.json();
       if (!response.ok) {
@@ -168,7 +182,7 @@ export default function RecordPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [deviceId, todayRecords.length]);
+  }, [deviceId]);
 
   useEffect(() => {
     if (!deviceId) {
@@ -214,7 +228,11 @@ export default function RecordPage() {
     }
 
     try {
-      mode === 'create' ? setUploading(true) : setEditUploading(true);
+      if (mode === 'create') {
+        setUploading(true);
+      } else {
+        setEditUploading(true);
+      }
       const uploaded = await uploadFiles(limited);
       if (mode === 'create') {
         setImageUrls((previous) => [...previous, ...uploaded].slice(0, MAX_IMAGE_COUNT));
@@ -225,7 +243,11 @@ export default function RecordPage() {
       console.error(error);
       alert('\u56fe\u7247\u4e0a\u4f20\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002');
     } finally {
-      mode === 'create' ? setUploading(false) : setEditUploading(false);
+      if (mode === 'create') {
+        setUploading(false);
+      } else {
+        setEditUploading(false);
+      }
     }
   }
 
@@ -331,8 +353,10 @@ export default function RecordPage() {
       return;
     }
 
+    const tagKey = `${recordId}:${tag}`;
     const nextTags = (target.tags || []).filter((current) => current !== tag);
     try {
+      setRemovingTagKeys((previous) => [...previous, tagKey]);
       const response = await fetch('/api/records', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -350,11 +374,14 @@ export default function RecordPage() {
     } catch (error) {
       console.error(error);
       alert('\u66f4\u65b0\u6807\u7b7e\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002');
+    } finally {
+      setRemovingTagKeys((previous) => previous.filter((current) => current !== tagKey));
     }
   }
 
   async function toggleTodo(record: MemoryItem) {
     try {
+      setTogglingRecordIds((previous) => [...previous, record.id]);
       const response = await fetch('/api/records', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -374,6 +401,8 @@ export default function RecordPage() {
     } catch (error) {
       console.error(error);
       alert('\u66f4\u65b0\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002');
+    } finally {
+      setTogglingRecordIds((previous) => previous.filter((currentId) => currentId !== record.id));
     }
   }
 
@@ -462,6 +491,7 @@ export default function RecordPage() {
     }
 
     try {
+      setDeletingRecordIds((previous) => [...previous, id]);
       const response = await fetch(`/api/records?id=${id}`, { method: 'DELETE' });
       const data = await response.json();
       if (!response.ok) {
@@ -472,6 +502,8 @@ export default function RecordPage() {
     } catch (error) {
       console.error(error);
       alert('\u5220\u9664\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002');
+    } finally {
+      setDeletingRecordIds((previous) => previous.filter((currentId) => currentId !== id));
     }
   }
 
@@ -553,7 +585,7 @@ export default function RecordPage() {
         {imageUrls.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {imageUrls.map((url, index) => (
-              <div key={url} className="relative">
+              <div key={`${url}-${index}`} className="relative">
                 <MemoryImage src={url} alt={`preview-${index}`} width={64} height={64} sizes="64px" className="w-16 h-16 object-cover rounded-lg" />
                 <button type="button" onClick={() => setImageUrls((prev) => prev.filter((_, i) => i !== index))} className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs">
                   x
@@ -642,7 +674,7 @@ export default function RecordPage() {
                       {editImages.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2">
                           {editImages.map((url, index) => (
-                            <div key={url} className="relative">
+                            <div key={`${url}-${index}`} className="relative">
                               <MemoryImage src={url} alt={`edit-${index}`} width={64} height={64} sizes="64px" className="w-16 h-16 object-cover rounded-lg" />
                               <button type="button" onClick={() => setEditImages((prev) => prev.filter((_, i) => i !== index))} className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 text-xs">
                                 x
@@ -657,10 +689,16 @@ export default function RecordPage() {
                   </div>
                 ) : (
                   <>
+                    {(() => {
+                      const images = getRecordImages(record);
+                      const isDeleting = deletingRecordIds.includes(record.id);
+                      const isToggling = togglingRecordIds.includes(record.id);
+                      return (
+                        <>
                     <div className="flex justify-between items-start mb-2 gap-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         {record.type === 'todo' && (
-                          <button type="button" onClick={() => void toggleTodo(record)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${record.is_completed ? 'bg-green-400 border-green-400 text-white' : 'border-gray-300'}`}>
+                          <button type="button" disabled={isToggling} onClick={() => void toggleTodo(record)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center disabled:opacity-60 ${record.is_completed ? 'bg-green-400 border-green-400 text-white' : 'border-gray-300'}`}>
                             {record.is_completed ? '✓' : ''}
                           </button>
                         )}
@@ -672,7 +710,7 @@ export default function RecordPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-400">{new Date(record.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
                         <button type="button" onClick={() => startEdit(record)} className="text-xs text-blue-400 hover:text-blue-600">{'\u7f16\u8f91'}</button>
-                        <button type="button" onClick={() => void deleteRecord(record.id)} className="text-xs text-red-400 hover:text-red-600">{'\u5220\u9664'}</button>
+                        <button type="button" disabled={isDeleting} onClick={() => void deleteRecord(record.id)} className="text-xs text-red-400 hover:text-red-600 disabled:opacity-60">{isDeleting ? '\u5220\u9664\u4e2d...' : '\u5220\u9664'}</button>
                       </div>
                     </div>
 
@@ -685,9 +723,9 @@ export default function RecordPage() {
                       </div>
                     )}
 
-                    {getRecordImages(record).length > 0 && (
+                    {images.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-3">
-                        {getRecordImages(record).map((url, index) => (
+                        {images.map((url, index) => (
                           <button key={`${record.id}-${index}`} type="button" onClick={() => setSelectedImage(url)} className="relative group">
                             <MemoryImage src={url} alt={`record-${index}`} width={720} height={540} sizes="(max-width: 768px) 100vw, 720px" className="w-full max-h-64 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
                           </button>
@@ -702,15 +740,18 @@ export default function RecordPage() {
                         {record.tags.map((tag) => (
                           <span key={tag} className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-600 rounded-full text-xs">
                             {tag}
-                            <button type="button" onClick={() => void removeTag(record.id, tag)} className="ml-1 text-purple-400 hover:text-purple-600">x</button>
+                            <button type="button" disabled={removingTagKeys.includes(`${record.id}:${tag}`)} onClick={() => void removeTag(record.id, tag)} className="ml-1 text-purple-400 hover:text-purple-600 disabled:opacity-50">x</button>
                           </span>
                         ))}
                       </div>
                     )}
 
-                    <button type="button" onClick={() => void extractTags(record.id, record.content, getRecordImages(record)[0])} disabled={extracting} className="mt-2 text-sm text-purple-500 hover:text-purple-700 disabled:opacity-50">
+                    <button type="button" onClick={() => void extractTags(record.id, record.content, images[0] ?? undefined)} disabled={extracting} className="mt-2 text-sm text-purple-500 hover:text-purple-700 disabled:opacity-50">
                       {record.tags && record.tags.length > 0 ? '\u91cd\u65b0\u5206\u6790\u6807\u7b7e' : '\u751f\u6210\u6807\u7b7e'}
                     </button>
+                        </>
+                      );
+                    })()}
                   </>
                 )}
               </div>
