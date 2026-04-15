@@ -304,10 +304,10 @@ export default function Home() {
                   <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">{'\u603b\u8bb0\u5f55'}</p>
                   <p className="mt-2 text-2xl font-bold text-pink-500">{totalCount}</p>
                 </div>
-                <div className="rounded-2xl border border-white/80 bg-white/70 px-4 py-4 shadow-sm">
+                <Link href="/invite" className="rounded-2xl border border-white/80 bg-white/70 px-4 py-4 shadow-sm transition hover:bg-white/90">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">{'\u9080\u8bf7\u7801'}</p>
                   <p className="mt-2 text-lg font-bold text-amber-500">{inviteCode || '---'}</p>
-                </div>
+                </Link>
               </div>
             </div>
 

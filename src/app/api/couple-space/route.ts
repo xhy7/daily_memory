@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 });
       }
       return NextResponse.json({
+        inviteCode: result.coupleSpace.invite_code,
         coupleSpace: result.coupleSpace,
         user: result.user,
         action: 'joined',
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
     // Otherwise, get or create couple space
     const result = await getOrCreateCoupleSpace(deviceId);
     return NextResponse.json({
+      inviteCode: result.coupleSpace.invite_code,
       coupleSpace: result.coupleSpace,
       user: result.user,
       action: result.user.created_at === result.coupleSpace.created_at ? 'created' : 'existing',
@@ -56,33 +58,48 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/couple-space - Get couple space info by invite code
+// GET /api/couple-space - Get couple space info by deviceId or inviteCode
 export async function GET(request: NextRequest) {
   try {
     await ensureDatabase();
 
     const searchParams = request.nextUrl.searchParams;
-    const inviteCode = searchParams.get('inviteCode');
     const deviceId = searchParams.get('deviceId');
+    const inviteCode = searchParams.get('inviteCode');
 
-    if (!inviteCode) {
-      return NextResponse.json({ error: 'inviteCode is required' }, { status: 400 });
-    }
-
-    const coupleSpace = await getCoupleSpaceByInviteCode(inviteCode);
-    if (!coupleSpace) {
-      return NextResponse.json({ error: 'Couple space not found' }, { status: 404 });
-    }
-
-    // If deviceId provided, verify they are in the same space
-    if (deviceId) {
-      const user = await getUserByDeviceId(deviceId);
-      if (!user || user.couple_space_id !== coupleSpace.id) {
-        return NextResponse.json({ error: 'Device not in this couple space' }, { status: 403 });
+    // If inviteCode is provided, look up by invite code
+    if (inviteCode) {
+      const coupleSpace = await getCoupleSpaceByInviteCode(inviteCode);
+      if (!coupleSpace) {
+        return NextResponse.json({ error: 'Couple space not found' }, { status: 404 });
       }
+
+      // If deviceId provided, verify they are in the same space
+      if (deviceId) {
+        const user = await getUserByDeviceId(deviceId);
+        if (!user || user.couple_space_id !== coupleSpace.id) {
+          return NextResponse.json({ error: 'Device not in this couple space' }, { status: 403 });
+        }
+      }
+
+      return NextResponse.json({
+        inviteCode: coupleSpace.invite_code,
+        coupleSpace,
+      });
     }
 
-    return NextResponse.json({ coupleSpace });
+    // If deviceId is provided, get or create couple space and return invite code
+    if (deviceId) {
+      const result = await getOrCreateCoupleSpace(deviceId);
+      return NextResponse.json({
+        inviteCode: result.coupleSpace.invite_code,
+        coupleSpace: result.coupleSpace,
+        user: result.user,
+        action: result.user.created_at === result.coupleSpace.created_at ? 'created' : 'existing',
+      });
+    }
+
+    return NextResponse.json({ error: 'deviceId or inviteCode is required' }, { status: 400 });
   } catch (error) {
     console.error('Failed to get couple space:', error);
     return NextResponse.json({ error: 'Failed to get couple space', details: String(error) }, { status: 500 });
