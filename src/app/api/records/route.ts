@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   createMemoryRecord,
   deleteMemoryRecord,
+  getMemoryRecordByIdForAccessRequest,
+  getMemoryRecordCalendarSummaryByAccessRequest,
+  getMemoryRecordsByAccessRequest,
+  getMemoryRecordsByAccessRequestAndDate,
   getMemoryRecordCalendarSummary,
   getMemoryRecordById,
   getMemoryRecordsByDate,
@@ -114,6 +118,7 @@ export async function GET(request: NextRequest) {
     const month = searchParams.get('month');
     const date = searchParams.get('date');
     const id = searchParams.get('id');
+    const accessRequestIdParam = searchParams.get('accessRequestId');
     const timezone = searchParams.get('timezone') || 'Asia/Shanghai';
     const limit = clampLimit(parsePositiveInt(searchParams.get('limit'), 100));
     const offset = clampOffset(parsePositiveInt(searchParams.get('offset'), 0));
@@ -121,6 +126,11 @@ export async function GET(request: NextRequest) {
     const recentDays = clampOffset(parsePositiveInt(searchParams.get('recentDays'), 0));
     const includeTotal = parseBoolean(searchParams.get('includeTotal'), false);
     const requestedFields = parseRequestedFields(searchParams.get('fields'));
+    const accessRequestId = accessRequestIdParam ? Number.parseInt(accessRequestIdParam, 10) : null;
+
+    if (accessRequestIdParam && (accessRequestId === null || Number.isNaN(accessRequestId))) {
+      return NextResponse.json({ error: 'Invalid accessRequestId format' }, { status: 400 });
+    }
 
     if (id) {
       const recordId = Number.parseInt(id, 10);
@@ -128,9 +138,20 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid id format' }, { status: 400 });
       }
 
-      const record = await getMemoryRecordById(recordId, {
-        fields: requestedFields,
-      });
+      if (accessRequestId !== null && !deviceId) {
+        return NextResponse.json({ error: 'deviceId is required when accessRequestId is provided' }, { status: 400 });
+      }
+
+      let record;
+      if (accessRequestId !== null) {
+        record = await getMemoryRecordByIdForAccessRequest(deviceId!, accessRequestId, recordId, {
+          fields: requestedFields,
+        });
+      } else {
+        record = await getMemoryRecordById(recordId, {
+          fields: requestedFields,
+        });
+      }
 
       if (!record) {
         return NextResponse.json({ error: 'Record not found' }, { status: 404 });
@@ -150,7 +171,9 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'month is required when summary=calendar' }, { status: 400 });
       }
 
-      const days = await getMemoryRecordCalendarSummary(deviceId, month, timezone);
+      const days = accessRequestId !== null
+        ? await getMemoryRecordCalendarSummaryByAccessRequest(deviceId, accessRequestId, month, timezone)
+        : await getMemoryRecordCalendarSummary(deviceId, month, timezone);
       const response = NextResponse.json({ days, month, timezone });
       response.headers.set('Cache-Control', CACHE_CONTROL);
       return response;
@@ -159,22 +182,39 @@ export async function GET(request: NextRequest) {
     const effectiveLimit = recent > 0 ? clampLimit(recent) : limit;
     const effectiveOffset = recent > 0 ? 0 : offset;
 
-    const result = date
-      ? await getMemoryRecordsByDate(deviceId, date, {
-          fields: requestedFields,
-          limit: effectiveLimit,
-          offset: effectiveOffset,
-          timezone,
-          includeTotal,
-        })
-      : await getMemoryRecordsByDevice(deviceId, {
-          fields: requestedFields,
-          limit: effectiveLimit,
-          offset: effectiveOffset,
-          recentDays: recentDays > 0 ? recentDays : undefined,
-          timezone,
-          includeTotal,
-        });
+    const result = accessRequestId !== null
+      ? date
+        ? await getMemoryRecordsByAccessRequestAndDate(deviceId, accessRequestId, date, {
+            fields: requestedFields,
+            limit: effectiveLimit,
+            offset: effectiveOffset,
+            timezone,
+            includeTotal,
+          })
+        : await getMemoryRecordsByAccessRequest(deviceId, accessRequestId, {
+            fields: requestedFields,
+            limit: effectiveLimit,
+            offset: effectiveOffset,
+            recentDays: recentDays > 0 ? recentDays : undefined,
+            timezone,
+            includeTotal,
+          })
+      : date
+        ? await getMemoryRecordsByDate(deviceId, date, {
+            fields: requestedFields,
+            limit: effectiveLimit,
+            offset: effectiveOffset,
+            timezone,
+            includeTotal,
+          })
+        : await getMemoryRecordsByDevice(deviceId, {
+            fields: requestedFields,
+            limit: effectiveLimit,
+            offset: effectiveOffset,
+            recentDays: recentDays > 0 ? recentDays : undefined,
+            timezone,
+            includeTotal,
+          });
 
     const response = NextResponse.json({
       records: result.records,

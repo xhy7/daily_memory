@@ -37,6 +37,31 @@ export interface CoupleSpaceProfiles {
   partnerB: CoupleSpaceProfile;
 }
 
+export type SpaceAccessStatus =
+  | 'pending'
+  | 'approved'
+  | 'active'
+  | 'rejected'
+  | 'revoked'
+  | 'expired';
+
+export interface SpaceAccessRequest {
+  id: number;
+  target_couple_space_id: number;
+  requester_device_id: string;
+  requester_name: string;
+  invite_code_snapshot: string;
+  status: SpaceAccessStatus;
+  approved_by_device_id: string | null;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  revoked_at: string | null;
+  first_access_at: string | null;
+  access_expires_at: string | null;
+}
+
 // 用户
 export interface User {
   id: number;
@@ -148,6 +173,28 @@ const COUPLE_SPACE_SELECT_CLAUSE = `
   updated_at
 `;
 
+const SPACE_ACCESS_REQUEST_SELECT_CLAUSE = `
+  id,
+  target_couple_space_id,
+  requester_device_id,
+  requester_name,
+  invite_code_snapshot,
+  status,
+  approved_by_device_id,
+  created_at,
+  updated_at,
+  approved_at,
+  rejected_at,
+  revoked_at,
+  first_access_at,
+  access_expires_at
+`;
+
+const COUPLE_SPACE_RECORD_SCOPE_CLAUSE =
+  '(couple_space_id = $1 OR (couple_space_id IS NULL AND device_id IN (SELECT device_id FROM users WHERE couple_space_id = $1)))';
+
+const ACCESS_WINDOW_MINUTES = 30;
+
 function parseJsonArrayField(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === 'string');
@@ -185,6 +232,24 @@ function normalizeMemoryRecordRow(row: Record<string, unknown>): MemoryRecord {
 
 function normalizeCoupleSpaceRow(row: Record<string, unknown>): CoupleSpace {
   return row as unknown as CoupleSpace;
+}
+
+function normalizeSpaceAccessRequestRow(row: Record<string, unknown>): SpaceAccessRequest {
+  return row as unknown as SpaceAccessRequest;
+}
+
+function shiftSqlPlaceholders(input: string, offset: number): string {
+  return input.replace(/\$(\d+)/g, (_, value: string) => `$${Number(value) + offset}`);
+}
+
+function getCoupleSpaceRecordScope(coupleSpaceId: number): {
+  clause: string;
+  values: Array<string | number>;
+} {
+  return {
+    clause: COUPLE_SPACE_RECORD_SCOPE_CLAUSE,
+    values: [coupleSpaceId],
+  };
 }
 
 function sanitizeSelectedFields(fields?: MemoryRecordSelectField[]): MemoryRecordSelectField[] {
@@ -229,13 +294,13 @@ function clampOffset(offset: number | undefined): number {
   return Math.max(0, offset);
 }
 
-async function queryMemoryRecords(
-  deviceId: string,
+async function queryMemoryRecordsByScope(
+  scope: { clause: string; values: Array<string | number> },
   options: MemoryRecordQueryOptions & { date?: string } = {}
 ): Promise<MemoryRecordQueryResult> {
   const { localDateToUTC } = await import('./datetime');
 
-  const { clause: scopeClause, values: scopeValues } = await getRecordScope(deviceId);
+  const { clause: scopeClause, values: scopeValues } = scope;
   const whereParts: string[] = [scopeClause];
   const whereValues: Array<string | number> = [...scopeValues];
   let nextParamIndex = whereValues.length + 1;
@@ -290,6 +355,14 @@ async function queryMemoryRecords(
     total: countResult ? Number(countResult.rows[0]?.total || 0) : null,
     hasMore,
   };
+}
+
+async function queryMemoryRecords(
+  deviceId: string,
+  options: MemoryRecordQueryOptions & { date?: string } = {}
+): Promise<MemoryRecordQueryResult> {
+  const scope = await getRecordScope(deviceId);
+  return queryMemoryRecordsByScope(scope, options);
 }
 
 export async function initializeDatabase() {
@@ -397,6 +470,30 @@ export async function initializeDatabase() {
     console.log('Users table creation skipped (may already exist)');
   }
 
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS space_access_requests (
+        id SERIAL PRIMARY KEY,
+        target_couple_space_id INTEGER NOT NULL REFERENCES couple_spaces(id),
+        requester_device_id VARCHAR(255) NOT NULL,
+        requester_name VARCHAR(100) NOT NULL,
+        invite_code_snapshot VARCHAR(8) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        approved_by_device_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        approved_at TIMESTAMP NULL,
+        rejected_at TIMESTAMP NULL,
+        revoked_at TIMESTAMP NULL,
+        first_access_at TIMESTAMP NULL,
+        access_expires_at TIMESTAMP NULL
+      )
+    `;
+    console.log('Space access requests table created or already exists');
+  } catch (e) {
+    console.log('Space access requests table creation skipped (may already exist)');
+  }
+
   // Add couple_space_id to records
   try {
     await sql`ALTER TABLE records ADD COLUMN couple_space_id INTEGER REFERENCES couple_spaces(id)`;
@@ -441,6 +538,29 @@ export async function initializeDatabase() {
 
   try {
     await sql`CREATE INDEX IF NOT EXISTS idx_records_couple_space ON records(couple_space_id)`;
+  } catch (e) { /* index may exist */ }
+
+  try {
+    await sql`CREATE INDEX IF NOT EXISTS idx_space_access_requests_target ON space_access_requests(target_couple_space_id)`;
+  } catch (e) { /* index may exist */ }
+
+  try {
+    await sql`CREATE INDEX IF NOT EXISTS idx_space_access_requests_requester ON space_access_requests(requester_device_id)`;
+  } catch (e) { /* index may exist */ }
+
+  try {
+    await sql`CREATE INDEX IF NOT EXISTS idx_space_access_requests_status ON space_access_requests(status)`;
+  } catch (e) { /* index may exist */ }
+
+  try {
+    await sql.query(
+      `
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_space_access_requests_open_unique
+        ON space_access_requests(target_couple_space_id, requester_device_id)
+        WHERE status IN ('pending', 'approved', 'active')
+      `,
+      []
+    );
   } catch (e) { /* index may exist */ }
 
   console.log('Database initialization complete');
@@ -500,18 +620,31 @@ export async function getMemoryRecordsByDate(
 
 export async function getMemoryRecordById(
   id: number,
-  options: Pick<MemoryRecordQueryOptions, 'fields'> = {}
+  options: Pick<MemoryRecordQueryOptions, 'fields'> & {
+    scope?: { clause: string; values: Array<string | number> };
+  } = {}
 ): Promise<MemoryRecord | null> {
   const selectClause = buildSelectClause(options.fields);
-  const result = await sql.query(
-    `
-      SELECT ${selectClause}
-      FROM records
-      WHERE id = $1
-      LIMIT 1
-    `,
-    [id]
-  );
+  const result = options.scope
+    ? await sql.query(
+        `
+          SELECT ${selectClause}
+          FROM records
+          WHERE id = $1
+            AND ${shiftSqlPlaceholders(options.scope.clause, 1)}
+          LIMIT 1
+        `,
+        [id, ...options.scope.values]
+      )
+    : await sql.query(
+        `
+          SELECT ${selectClause}
+          FROM records
+          WHERE id = $1
+          LIMIT 1
+        `,
+        [id]
+      );
 
   if (result.rows.length === 0) {
     return null;
@@ -520,14 +653,14 @@ export async function getMemoryRecordById(
   return normalizeMemoryRecordRow(result.rows[0] as Record<string, unknown>);
 }
 
-export async function getMemoryRecordCalendarSummary(
-  deviceId: string,
+async function getMemoryRecordCalendarSummaryByScope(
+  scope: { clause: string; values: Array<string | number> },
   month: string,
   timezone: string = 'Asia/Shanghai'
 ): Promise<CalendarDaySummary[]> {
   const { localMonthToUTC } = await import('./datetime');
   const { start, end } = localMonthToUTC(month, timezone);
-  const { clause: scopeClause, values: scopeValues } = await getRecordScope(deviceId);
+  const { clause: scopeClause, values: scopeValues } = scope;
 
   const result = await sql.query(
     `
@@ -548,6 +681,15 @@ export async function getMemoryRecordCalendarSummary(
     date: String(row.date),
     count: Number(row.count),
   }));
+}
+
+export async function getMemoryRecordCalendarSummary(
+  deviceId: string,
+  month: string,
+  timezone: string = 'Asia/Shanghai'
+): Promise<CalendarDaySummary[]> {
+  const scope = await getRecordScope(deviceId);
+  return getMemoryRecordCalendarSummaryByScope(scope, month, timezone);
 }
 
 export async function updateMemoryRecordPolishedContent(
@@ -798,11 +940,7 @@ async function getRecordScope(deviceId: string): Promise<{ clause: string; value
   const coupleSpaceId = await resolveDeviceIdToCoupleSpaceId(deviceId);
 
   if (coupleSpaceId) {
-    return {
-      clause:
-        '(couple_space_id = $1 OR (couple_space_id IS NULL AND device_id IN (SELECT device_id FROM users WHERE couple_space_id = $1)))',
-      values: [coupleSpaceId],
-    };
+    return getCoupleSpaceRecordScope(coupleSpaceId);
   }
 
   return {
@@ -1032,6 +1170,347 @@ export async function updateCoupleSpaceProfile(
   );
 
   return result.rows[0] ? normalizeCoupleSpaceRow(result.rows[0] as Record<string, unknown>) : null;
+}
+
+async function expireActiveAccessRequests(): Promise<void> {
+  await sql`
+    UPDATE space_access_requests
+    SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+    WHERE status = 'active'
+      AND access_expires_at IS NOT NULL
+      AND access_expires_at <= CURRENT_TIMESTAMP
+  `;
+}
+
+async function getSpaceAccessRequestById(id: number): Promise<SpaceAccessRequest | null> {
+  const result = await sql.query(
+    `
+      SELECT ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      FROM space_access_requests
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  );
+
+  return result.rows[0]
+    ? normalizeSpaceAccessRequestRow(result.rows[0] as Record<string, unknown>)
+    : null;
+}
+
+export async function createSpaceAccessRequest(
+  deviceId: string,
+  inviteCode: string,
+  requesterName: string
+): Promise<SpaceAccessRequest> {
+  const normalizedName = requesterName.trim();
+  if (!normalizedName) {
+    throw new Error('REQUESTER_NAME_REQUIRED');
+  }
+
+  const coupleSpace = await getCoupleSpaceByInviteCode(inviteCode);
+  if (!coupleSpace) {
+    throw new Error('INVALID_INVITE_CODE');
+  }
+
+  const requesterCoupleSpaceId = await resolveDeviceIdToCoupleSpaceId(deviceId);
+  if (requesterCoupleSpaceId && requesterCoupleSpaceId === coupleSpace.id) {
+    throw new Error('CANNOT_REQUEST_OWN_SPACE');
+  }
+
+  await expireActiveAccessRequests();
+
+  const existingOpenRequest = await sql.query(
+    `
+      SELECT ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      FROM space_access_requests
+      WHERE target_couple_space_id = $1
+        AND requester_device_id = $2
+        AND status IN ('pending', 'approved', 'active')
+      LIMIT 1
+    `,
+    [coupleSpace.id, deviceId]
+  );
+
+  if (existingOpenRequest.rows[0]) {
+    throw new Error('REQUEST_ALREADY_EXISTS');
+  }
+
+  try {
+    const result = await sql.query(
+      `
+        INSERT INTO space_access_requests (
+          target_couple_space_id,
+          requester_device_id,
+          requester_name,
+          invite_code_snapshot,
+          status
+        )
+        VALUES ($1, $2, $3, $4, 'pending')
+        RETURNING ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      `,
+      [coupleSpace.id, deviceId, normalizedName, coupleSpace.invite_code]
+    );
+
+    return normalizeSpaceAccessRequestRow(result.rows[0] as Record<string, unknown>);
+  } catch (error) {
+    if (error instanceof Error && /idx_space_access_requests_open_unique/i.test(error.message)) {
+      throw new Error('REQUEST_ALREADY_EXISTS');
+    }
+
+    throw error;
+  }
+}
+
+export async function listIncomingSpaceAccessRequests(deviceId: string): Promise<SpaceAccessRequest[]> {
+  await expireActiveAccessRequests();
+
+  const user = await getUserByDeviceId(deviceId);
+  if (!user?.couple_space_id) {
+    return [];
+  }
+
+  const result = await sql.query(
+    `
+      SELECT ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      FROM space_access_requests
+      WHERE target_couple_space_id = $1
+        AND status IN ('pending', 'approved', 'active')
+      ORDER BY
+        CASE status
+          WHEN 'pending' THEN 0
+          WHEN 'approved' THEN 1
+          WHEN 'active' THEN 2
+          ELSE 3
+        END,
+        created_at DESC
+    `,
+    [user.couple_space_id]
+  );
+
+  return result.rows.map((row) => normalizeSpaceAccessRequestRow(row as Record<string, unknown>));
+}
+
+export async function listOutgoingSpaceAccessRequests(deviceId: string): Promise<SpaceAccessRequest[]> {
+  await expireActiveAccessRequests();
+
+  const result = await sql.query(
+    `
+      SELECT ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      FROM space_access_requests
+      WHERE requester_device_id = $1
+      ORDER BY created_at DESC
+      LIMIT 50
+    `,
+    [deviceId]
+  );
+
+  return result.rows.map((row) => normalizeSpaceAccessRequestRow(row as Record<string, unknown>));
+}
+
+export async function updateSpaceAccessRequestStatus(
+  deviceId: string,
+  requestId: number,
+  action: 'approve' | 'reject' | 'revoke'
+): Promise<SpaceAccessRequest> {
+  await expireActiveAccessRequests();
+
+  const user = await getUserByDeviceId(deviceId);
+  if (!user?.couple_space_id) {
+    throw new Error('ACCESS_REQUEST_FORBIDDEN');
+  }
+
+  const request = await getSpaceAccessRequestById(requestId);
+  if (!request) {
+    throw new Error('ACCESS_REQUEST_NOT_FOUND');
+  }
+
+  if (request.target_couple_space_id !== user.couple_space_id) {
+    throw new Error('ACCESS_REQUEST_FORBIDDEN');
+  }
+
+  if (action === 'approve') {
+    if (request.status !== 'pending') {
+      throw new Error('ACCESS_REQUEST_INVALID_STATUS');
+    }
+
+    const result = await sql.query(
+      `
+        UPDATE space_access_requests
+        SET status = 'approved',
+            approved_by_device_id = $2,
+            approved_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      `,
+      [requestId, deviceId]
+    );
+
+    return normalizeSpaceAccessRequestRow(result.rows[0] as Record<string, unknown>);
+  }
+
+  if (action === 'reject') {
+    if (request.status !== 'pending') {
+      throw new Error('ACCESS_REQUEST_INVALID_STATUS');
+    }
+
+    const result = await sql.query(
+      `
+        UPDATE space_access_requests
+        SET status = 'rejected',
+            rejected_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      `,
+      [requestId]
+    );
+
+    return normalizeSpaceAccessRequestRow(result.rows[0] as Record<string, unknown>);
+  }
+
+  if (request.status !== 'approved' && request.status !== 'active') {
+    throw new Error('ACCESS_REQUEST_INVALID_STATUS');
+  }
+
+  const result = await sql.query(
+    `
+      UPDATE space_access_requests
+      SET status = 'revoked',
+          revoked_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+    `,
+    [requestId]
+  );
+
+  return normalizeSpaceAccessRequestRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function resolveAccessRequestReadableScope(
+  deviceId: string,
+  requestId: number
+): Promise<{
+  request: SpaceAccessRequest;
+  coupleSpace: CoupleSpace;
+  recordScope: { clause: string; values: Array<string | number> };
+}> {
+  await expireActiveAccessRequests();
+
+  const existingRequest = await getSpaceAccessRequestById(requestId);
+  if (!existingRequest) {
+    throw new Error('ACCESS_REQUEST_NOT_FOUND');
+  }
+
+  if (existingRequest.requester_device_id !== deviceId) {
+    throw new Error('ACCESS_REQUEST_FORBIDDEN');
+  }
+
+  if (existingRequest.status === 'pending') {
+    throw new Error('ACCESS_REQUEST_NOT_APPROVED');
+  }
+
+  if (existingRequest.status === 'rejected' || existingRequest.status === 'revoked' || existingRequest.status === 'expired') {
+    throw new Error('ACCESS_REQUEST_UNAVAILABLE');
+  }
+
+  const coupleSpace = await getCoupleSpaceById(existingRequest.target_couple_space_id);
+  if (!coupleSpace) {
+    throw new Error('COUPLE_SPACE_NOT_FOUND');
+  }
+
+  let request = existingRequest;
+
+  if (request.status === 'approved') {
+    const activated = await sql.query(
+      `
+        UPDATE space_access_requests
+        SET status = 'active',
+            first_access_at = COALESCE(first_access_at, CURRENT_TIMESTAMP),
+            access_expires_at = COALESCE(
+              access_expires_at,
+              CURRENT_TIMESTAMP + ($2::text || ' minutes')::interval
+            ),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING ${SPACE_ACCESS_REQUEST_SELECT_CLAUSE}
+      `,
+      [request.id, ACCESS_WINDOW_MINUTES]
+    );
+
+    request = normalizeSpaceAccessRequestRow(activated.rows[0] as Record<string, unknown>);
+  }
+
+  if (
+    request.status === 'active' &&
+    request.access_expires_at &&
+    new Date(request.access_expires_at).getTime() <= Date.now()
+  ) {
+    await sql`
+      UPDATE space_access_requests
+      SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${request.id}
+    `;
+    throw new Error('ACCESS_REQUEST_UNAVAILABLE');
+  }
+
+  return {
+    request,
+    coupleSpace,
+    recordScope: getCoupleSpaceRecordScope(coupleSpace.id),
+  };
+}
+
+export async function getMemoryRecordsByAccessRequest(
+  deviceId: string,
+  accessRequestId: number,
+  options: MemoryRecordQueryOptions = {}
+): Promise<MemoryRecordQueryResult> {
+  const resolved = await resolveAccessRequestReadableScope(deviceId, accessRequestId);
+  return queryMemoryRecordsByScope(resolved.recordScope, options);
+}
+
+export async function getMemoryRecordsByAccessRequestAndDate(
+  deviceId: string,
+  accessRequestId: number,
+  date: string,
+  options: MemoryRecordQueryOptions = {}
+): Promise<MemoryRecordQueryResult> {
+  const resolved = await resolveAccessRequestReadableScope(deviceId, accessRequestId);
+  return queryMemoryRecordsByScope(resolved.recordScope, { ...options, date });
+}
+
+export async function getMemoryRecordCalendarSummaryByAccessRequest(
+  deviceId: string,
+  accessRequestId: number,
+  month: string,
+  timezone: string = 'Asia/Shanghai'
+): Promise<CalendarDaySummary[]> {
+  const resolved = await resolveAccessRequestReadableScope(deviceId, accessRequestId);
+  return getMemoryRecordCalendarSummaryByScope(resolved.recordScope, month, timezone);
+}
+
+export async function getMemoryRecordByIdForAccessRequest(
+  deviceId: string,
+  accessRequestId: number,
+  id: number,
+  options: Pick<MemoryRecordQueryOptions, 'fields'> = {}
+): Promise<MemoryRecord | null> {
+  const resolved = await resolveAccessRequestReadableScope(deviceId, accessRequestId);
+  return getMemoryRecordById(id, {
+    ...options,
+    scope: resolved.recordScope,
+  });
+}
+
+export async function getCoupleSpaceByAccessRequest(
+  deviceId: string,
+  accessRequestId: number
+): Promise<CoupleSpace> {
+  const resolved = await resolveAccessRequestReadableScope(deviceId, accessRequestId);
+  return resolved.coupleSpace;
 }
 
 export async function getOrCreateCoupleSpace(deviceId: string): Promise<{ coupleSpace: CoupleSpace; user: User }> {

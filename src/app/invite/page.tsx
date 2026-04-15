@@ -1,70 +1,79 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
+
+function createOrGetDeviceId() {
+  const stored = localStorage.getItem('coupleDeviceId');
+  if (stored) {
+    return stored;
+  }
+
+  const newId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? `device_${crypto.randomUUID()}`
+      : `device_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
+  localStorage.setItem('coupleDeviceId', newId);
+  return newId;
+}
 
 export default function InvitePage() {
   const router = useRouter();
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState('');
+  const [requesterName, setRequesterName] = useState('');
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem('coupleDeviceId');
-    if (!stored) {
-      const newId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? `device_${crypto.randomUUID()}`
-        : `device_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-      localStorage.setItem('coupleDeviceId', newId);
-      setDeviceId(newId);
-    } else {
-      setDeviceId(stored);
-    }
+    setDeviceId(createOrGetDeviceId());
   }, []);
 
   const fetchCoupleSpace = useCallback(async () => {
-    if (!deviceId) return;
+    if (!deviceId) {
+      return;
+    }
 
     try {
       setError(null);
       const response = await fetch(`/api/couple-space?deviceId=${encodeURIComponent(deviceId)}`);
+      const data = (await response.json()) as { error?: string; inviteCode?: string };
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to load invite code');
+        throw new Error(data.error || '加载邀请码失败');
       }
 
-      const data = await response.json();
-
-      if (data.inviteCode) {
-        setInviteCode(data.inviteCode);
-      }
+      setInviteCode(data.inviteCode || null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load invite code');
+      setError(err instanceof Error ? err.message : '加载邀请码失败');
     } finally {
       setLoading(false);
     }
   }, [deviceId]);
 
   useEffect(() => {
-    if (deviceId) {
-      fetchCoupleSpace();
+    if (!deviceId) {
+      return;
     }
+
+    void fetchCoupleSpace();
   }, [deviceId, fetchCoupleSpace]);
 
   const handleJoin = async () => {
     if (!joinCode.trim()) {
-      setError('\u8bf7\u8f93\u5165\u9080\u8bf7\u7801');
+      setError('请输入邀请码');
       return;
     }
 
     if (!deviceId) {
-      setError('\u672a\u627e\u5230\u8bbe\u5907ID');
+      setError('未找到设备 ID');
       return;
     }
 
@@ -82,39 +91,84 @@ export default function InvitePage() {
         }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as { error?: string; inviteCode?: string };
 
       if (!response.ok) {
-        throw new Error(data.error || 'Invalid invite code');
+        throw new Error(data.error || '加入失败');
       }
 
-      setSuccess('\u6210\u529f\u52a0\u5165\u60c5\u4fa3\u7a7a\u95f4\uff01');
+      setInviteCode(data.inviteCode || null);
       setJoinCode('');
+      setSuccess('已加入对方的记录空间，正在回到首页。');
 
-      if (data.inviteCode) {
-        setInviteCode(data.inviteCode);
-      }
-
-      setTimeout(() => {
+      window.setTimeout(() => {
         router.push('/');
-      }, 1500);
+      }, 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to join');
+      setError(err instanceof Error ? err.message : '加入失败');
     } finally {
       setJoining(false);
     }
   };
 
+  const handleApplyAccess = async () => {
+    if (!joinCode.trim()) {
+      setError('请输入邀请码');
+      return;
+    }
+
+    if (!requesterName.trim()) {
+      setError('请填写你的称呼');
+      return;
+    }
+
+    if (!deviceId) {
+      setError('未找到设备 ID');
+      return;
+    }
+
+    setApplying(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('/api/access-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId,
+          inviteCode: joinCode.trim().toUpperCase(),
+          requesterName: requesterName.trim(),
+        }),
+      });
+
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || '申请发送失败');
+      }
+
+      setSuccess('申请已发出，等待对方同意。你可以稍后去访问页查看状态。');
+      setRequesterName('');
+      setJoinCode('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '申请发送失败');
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const handleCopy = async () => {
-    if (!inviteCode) return;
+    if (!inviteCode) {
+      return;
+    }
 
     try {
       await navigator.clipboard.writeText(inviteCode);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
       setError(null);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError('\u590d\u5236\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u590d\u5236\u9080\u8bf7\u7801');
+      setError('复制失败，请手动复制邀请码');
     }
   };
 
@@ -126,24 +180,31 @@ export default function InvitePage() {
         <div className="absolute bottom-[-4rem] left-1/2 h-60 w-60 -translate-x-1/2 rounded-full bg-pink-100/40 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto max-w-lg">
-        <div className="mb-6">
+      <div className="relative mx-auto max-w-2xl">
+        <div className="mb-6 flex items-center justify-between gap-3">
           <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-4 py-2 text-sm font-semibold text-rose-500 shadow-sm backdrop-blur transition hover:bg-white"
           >
-            <span>{'\u2190'}</span>
-            <span>{'\u8fd4\u56de\u9996\u9875'}</span>
+            <span>←</span>
+            <span>返回首页</span>
+          </Link>
+
+          <Link
+            href="/access"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/75 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm backdrop-blur transition hover:bg-white"
+          >
+            <span>查看访问申请</span>
+            <span>→</span>
           </Link>
         </div>
 
         <section className="overflow-hidden rounded-[28px] border border-white/75 bg-white/72 shadow-[0_28px_70px_-52px_rgba(148,63,117,0.4)] backdrop-blur-xl">
           <div className="px-6 py-8 sm:px-8 sm:py-10">
-            <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">
-              {'\u9080\u8bf7\u7801'}
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              {'\u5206\u4eab\u60c5\u4fa3\u7a7a\u95f4\uff0c\u8ba9\u4e24\u4e2a\u4eba\u7684\u8bb0\u5fc6\u4e92\u76f8\u901a'}
+            <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">邀请与访问</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              可以直接加入同一个记录空间，也可以先发起只读访问申请，
+              看看对方的首页、历史和 3D 视图。
             </p>
 
             {loading ? (
@@ -152,88 +213,101 @@ export default function InvitePage() {
               </div>
             ) : (
               <>
-                {/* Invite Code Display */}
                 <div className="mt-8 rounded-2xl border border-white/80 bg-gradient-to-br from-rose-50 to-pink-50 p-6 text-center">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    {'\u4f60\u7684\u9080\u8bf7\u7801'}
+                    你的邀请码
                   </p>
                   <p className="mt-3 text-4xl font-black tracking-[0.2em] text-rose-500">
                     {inviteCode || '------'}
                   </p>
                   <button
+                    type="button"
                     onClick={handleCopy}
                     disabled={!inviteCode}
                     className="mt-4 inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white/80 px-4 py-2 text-sm font-semibold text-rose-500 shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {copied ? (
-                      <>
-                        <span>{'\u2714'}</span>
-                        <span>{'\u5df2\u590d\u5236'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>{'\u2398'}</span>
-                        <span>{'\u590d\u5236\u9080\u8bf7\u7801'}</span>
-                      </>
-                    )}
+                    <span>{copied ? '已复制' : '复制邀请码'}</span>
                   </button>
                 </div>
 
-                {/* Divider */}
-                <div className="mt-8 flex items-center gap-4">
-                  <div className="h-px flex-1 bg-slate-200" />
-                  <p className="text-xs text-slate-400">{'\u6216\u8005'}</p>
-                  <div className="h-px flex-1 bg-slate-200" />
+                <div className="mt-8 grid gap-4 lg:grid-cols-2">
+                  <section className="rounded-2xl border border-slate-100 bg-slate-50/85 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
+                      直接加入
+                    </p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-900">进入同一个记录空间</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      适合一起写、一起看，加入后会共享记录内容。
+                    </p>
+
+                    <div className="mt-4 space-y-3">
+                      <input
+                        type="text"
+                        value={joinCode}
+                        onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                        placeholder="输入邀请码"
+                        maxLength={6}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg font-semibold tracking-[0.2em] text-slate-800 placeholder:text-slate-300 focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleJoin}
+                        disabled={joining || !joinCode.trim()}
+                        className="w-full rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 px-6 py-3 font-semibold text-white shadow-md transition hover:from-rose-600 hover:to-pink-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {joining ? '加入中...' : '加入'}
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-100 bg-slate-50/85 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
+                      申请访问
+                    </p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-900">先申请只读查看</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      对方同意后，你可以在限定时间内查看首页、历史和 3D 视图。
+                    </p>
+
+                    <div className="mt-4 space-y-3">
+                      <input
+                        type="text"
+                        value={requesterName}
+                        onChange={(event) => setRequesterName(event.target.value)}
+                        placeholder="填写你的称呼"
+                        maxLength={20}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 placeholder:text-slate-300 focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyAccess}
+                        disabled={applying || !joinCode.trim() || !requesterName.trim()}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-6 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {applying ? '发送中...' : '申请访问'}
+                      </button>
+                    </div>
+                  </section>
                 </div>
 
-                {/* Join Section */}
-                <div className="mt-6">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    {'\u52a0\u5165\u4ed6\u4eba\u7684\u7a7a\u95f4'}
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    <input
-                      type="text"
-                      value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                      placeholder={'\u8f93\u5165\u9080\u8bf7\u7801'}
-                      maxLength={6}
-                      className="flex-1 rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-center text-lg font-semibold tracking-[0.2em] text-slate-800 placeholder:text-slate-300 focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                    />
-                    <button
-                      onClick={handleJoin}
-                      disabled={joining || !joinCode.trim()}
-                      className="rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 px-6 py-3 font-semibold text-white shadow-md transition hover:from-rose-600 hover:to-pink-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {joining ? (
-                        <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      ) : (
-                        '\u52a0\u5165'
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Messages */}
-                {error && (
+                {error ? (
                   <div className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
                     {error}
                   </div>
-                )}
+                ) : null}
 
-                {success && (
-                  <div className="mt-4 rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-600">
+                {success ? (
+                  <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-600">
                     {success}
                   </div>
-                )}
+                ) : null}
               </>
             )}
           </div>
         </section>
 
-        {/* Help Text */}
-        <p className="mt-6 text-center text-xs text-slate-400">
-          {'\u628a\u9080\u8bf7\u7801\u53d1\u7ed9\u4f60\u7684\u4f34\u4fa3\uff0c\u4ed6\u4eec\u5c31\u80fd\u52a0\u5165\u540c\u4e00\u4e2a\u7a7a\u95f4\u4e86'}
+        <p className="mt-6 text-center text-xs leading-6 text-slate-400">
+          直接加入会共享同一份记录；申请访问只会开放浏览权限，不会改变你自己的空间。
         </p>
       </div>
     </main>
