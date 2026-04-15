@@ -144,7 +144,7 @@ function AvatarMedallion({
             title={'\u70b9\u51fb\u7f16\u8f91'}
           >
             {name}
-            <span className="ml-1 inline-block text-xs opacity-0 transition group-hover:opacity-100">\u270e</span>
+            <span className="ml-1 inline-block text-xs opacity-0 transition group-hover:opacity-100">{'\u270e'}</span>
           </button>
         )}
         <p className="mt-1 text-xs uppercase tracking-[0.28em] text-slate-400">{subtitle}</p>

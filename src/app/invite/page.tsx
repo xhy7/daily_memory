@@ -132,8 +132,8 @@ export default function InvitePage() {
             href="/"
             className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-4 py-2 text-sm font-semibold text-rose-500 shadow-sm backdrop-blur transition hover:bg-white"
           >
-            <span>\u2190</span>
-            <span>\u8fd4\u56de\u9996\u9875</span>
+            <span>{'\u2190'}</span>
+            <span>{'\u8fd4\u56de\u9996\u9875'}</span>
           </Link>
         </div>
 
@@ -167,12 +167,12 @@ export default function InvitePage() {
                   >
                     {copied ? (
                       <>
-                        <span>\u2714</span>
+                        <span>{'\u2714'}</span>
                         <span>{'\u5df2\u590d\u5236'}</span>
                       </>
                     ) : (
                       <>
-                        <span>\u2398</span>
+                        <span>{'\u2398'}</span>
                         <span>{'\u590d\u5236\u9080\u8bf7\u7801'}</span>
                       </>
                     )}

@@ -1,0 +1,51 @@
+0 verbose cli D:\xhy\node.exe D:\xhy\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.14.0
+3 silly config load:file:D:\xhy\node_modules\npm\npmrc
+4 silly config load:file:C:\.npmrc
+5 silly config load:file:C:\Users\26945\.npmrc
+6 silly config load:file:D:\xhy\node_global\etc\npmrc
+7 verbose title npm exec playwright-cli list
+8 verbose argv "exec" "--yes" "--package" "@playwright/cli" "--" "playwright-cli" "list"
+9 verbose logfile logs-max:10 dir:D:\HuaweiMoveData\Users\26945\Desktop\claude-code\memory_help\.npm-cache\_logs\2026-04-15T07_37_55_640Z-
+10 verbose logfile D:\HuaweiMoveData\Users\26945\Desktop\claude-code\memory_help\.npm-cache\_logs\2026-04-15T07_37_55_640Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 http fetch GET 200 https://registry.npmmirror.com/@playwright%2fcli 88ms (cache revalidated)
+14 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+15 verbose stack Error: EPERM: operation not permitted, lstat 'D:\HuaweiMoveData\Users\26945\Desktop\claude-code'
+15 verbose stack     at async lstat (node:internal/fs/promises:1027:18)
+15 verbose stack     at async #loadActual (D:\xhy\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\load-actual.js:129:15)
+15 verbose stack     at async exec (D:\xhy\node_modules\npm\node_modules\libnpmexec\lib\index.js:247:21)
+15 verbose stack     at async Npm.exec (D:\xhy\node_modules\npm\lib\npm.js:207:9)
+15 verbose stack     at async module.exports (D:\xhy\node_modules\npm\lib\cli\entry.js:74:5)
+16 error code EPERM
+17 error syscall lstat
+18 error path D:\HuaweiMoveData\Users\26945\Desktop\claude-code
+19 error errno -4048
+20 error Error: EPERM: operation not permitted, lstat 'D:\HuaweiMoveData\Users\26945\Desktop\claude-code'
+20 error     at async lstat (node:internal/fs/promises:1027:18)
+20 error     at async #loadActual (D:\xhy\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\load-actual.js:129:15)
+20 error     at async exec (D:\xhy\node_modules\npm\node_modules\libnpmexec\lib\index.js:247:21)
+20 error     at async Npm.exec (D:\xhy\node_modules\npm\lib\npm.js:207:9)
+20 error     at async module.exports (D:\xhy\node_modules\npm\lib\cli\entry.js:74:5) {
+20 error   errno: -4048,
+20 error   code: 'EPERM',
+20 error   syscall: 'lstat',
+20 error   path: 'D:\\HuaweiMoveData\\Users\\26945\\Desktop\\claude-code'
+20 error }
+21 error
+21 error The operation was rejected by your operating system.
+21 error It's possible that the file was already in use (by a text editor or antivirus),
+21 error or that you lack permissions to access it.
+21 error
+21 error If you believe this might be a permissions issue, please double-check the
+21 error permissions of the file and its containing directories, or try running
+21 error the command again as root/Administrator.
+22 verbose cwd C:\
+23 verbose os Windows_NT 10.0.26200
+24 verbose node v22.14.0
+25 verbose npm  v10.9.2
+26 verbose exit -4048
+27 verbose code -4048
+28 error A complete log of this run can be found in: D:\HuaweiMoveData\Users\26945\Desktop\claude-code\memory_help\.npm-cache\_logs\2026-04-15T07_37_55_640Z-debug-0.log
