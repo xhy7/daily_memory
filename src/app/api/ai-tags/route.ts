@@ -60,10 +60,15 @@ function parseTags(text: string): string[] {
   return normalizeTags(trimmed.split(/[,，、\n]/).map((item) => item.trim()));
 }
 
-function fallbackTags(content: string, existingTags: string[]): string[] {
+function fallbackTags(content: string, existingTags: string[], hasImage: boolean): string[] {
   const result = new Set<string>();
   const cjk = content.match(/[\u4E00-\u9FFF]{2,8}/g) || [];
   const words = content.toLowerCase().match(/[a-z][a-z-]{2,15}/g) || [];
+
+  if (hasImage) {
+    result.add('照片');
+    result.add('瞬间');
+  }
 
   for (const item of existingTags) {
     if (content.includes(item)) {
@@ -110,6 +115,7 @@ export async function POST(request: NextRequest) {
       '- if the original content is Chinese, return Chinese tags',
       `Existing tags: ${JSON.stringify(existingTags)}`,
       `Content: "${sanitizeText(content)}"`,
+      `Image URL: "${sanitizeText(imageUrl)}"`,
       `Has image: ${imageUrl ? 'yes' : 'no'}`,
     ].join('\n');
 
@@ -123,11 +129,11 @@ export async function POST(request: NextRequest) {
 
     let tags = parseTags(rawResponse);
     if (tags.length < 3) {
-      tags = fallbackTags(content, existingTags);
+      tags = fallbackTags(content, existingTags, Boolean(imageUrl));
     }
 
     if (tags.length === 0) {
-      tags = ['记录', '日常', '回忆'];
+      tags = imageUrl ? ['照片', '瞬间', '回忆'] : ['记录', '日常', '回忆'];
     }
 
     return NextResponse.json({

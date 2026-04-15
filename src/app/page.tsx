@@ -186,10 +186,14 @@ export default function Home() {
       try {
         const today = new Date();
         const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        const response = await fetch(`/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${dateStr}&limit=1&fields=id`);
+        const response = await fetch(
+          `/api/records?deviceId=${encodeURIComponent(deviceId)}&date=${dateStr}&limit=1&fields=id&includeTotal=1`,
+        );
         const data = await response.json();
-        if (data.pagination?.total !== undefined) {
+        if (typeof data.pagination?.total === 'number') {
           setTodayCount(data.pagination.total);
+        } else {
+          setTodayCount(0);
         }
       } catch {
         // ignore
@@ -202,8 +206,10 @@ export default function Home() {
         if (!deviceId) return;
         const response = await fetch(`/api/records?deviceId=${encodeURIComponent(deviceId)}&limit=0&includeTotal=1`);
         const data = await response.json();
-        if (data.pagination?.total !== undefined) {
+        if (typeof data.pagination?.total === 'number') {
           setTotalCount(data.pagination.total);
+        } else {
+          setTotalCount(0);
         }
       } catch {
         // ignore
