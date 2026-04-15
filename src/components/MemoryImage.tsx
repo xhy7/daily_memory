@@ -15,7 +15,11 @@ interface MemoryImageProps {
 }
 
 function shouldFallbackToImg(src: string): boolean {
-  return src.startsWith('data:image') || src.startsWith('blob:');
+  return (
+    src.startsWith('data:image') ||
+    src.startsWith('blob:') ||
+    /\.(heic|heif)(?:$|[?#])/i.test(src)
+  );
 }
 
 export default function MemoryImage({

@@ -192,17 +192,9 @@ export default function RecordPage() {
     void fetchTodayRecords(false);
   }, [deviceId, fetchTodayRecords]);
 
-  async function uploadFiles(files: File[]) {
-    const accepted = files
-      .slice(0, MAX_IMAGE_COUNT)
-      .filter((file) => file.size <= MAX_FILE_SIZE);
-
-    if (accepted.length === 0) {
-      return [];
-    }
-
+  async function uploadSingleFile(file: File) {
     const formData = new FormData();
-    accepted.forEach((file) => formData.append('files', file));
+    formData.append('file', file);
 
     const response = await fetch('/api/upload', { method: 'POST', body: formData });
     const data = await response.json();
@@ -210,9 +202,16 @@ export default function RecordPage() {
       throw new Error(data.error || 'upload failed');
     }
 
-    return (Array.isArray(data.uploads) ? data.uploads : [])
-      .map((item: { url?: string }) => item.url)
-      .filter((url: string | undefined): url is string => Boolean(url));
+    const uploadedUrl =
+      (Array.isArray(data.uploads) ? data.uploads : [])
+        .map((item: { url?: string }) => item.url)
+        .find((url: string | undefined): url is string => Boolean(url)) || data.url;
+
+    if (!uploadedUrl || typeof uploadedUrl !== 'string') {
+      throw new Error('upload failed');
+    }
+
+    return uploadedUrl;
   }
 
   async function handleUpload(files: File[], mode: 'create' | 'edit') {
@@ -227,17 +226,41 @@ export default function RecordPage() {
       return;
     }
 
+    const oversized = limited.filter((file) => file.size > MAX_FILE_SIZE);
+    if (oversized.length > 0) {
+      alert(`\u6709 ${oversized.length} \u5f20\u56fe\u7247\u8d85\u8fc7 10MB\uff0c\u8bf7\u91cd\u65b0\u9009\u62e9\u3002`);
+      return;
+    }
+
     try {
       if (mode === 'create') {
         setUploading(true);
       } else {
         setEditUploading(true);
       }
-      const uploaded = await uploadFiles(limited);
+
+      const uploaded: string[] = [];
+      const failedMessages: string[] = [];
+
+      for (const file of limited) {
+        try {
+          const uploadedUrl = await uploadSingleFile(file);
+          uploaded.push(uploadedUrl);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'upload failed';
+          failedMessages.push(`${file.name || '\u672a\u547d\u540d\u56fe\u7247'}\uff1a${message}`);
+        }
+      }
+
       if (mode === 'create') {
         setImageUrls((previous) => [...previous, ...uploaded].slice(0, MAX_IMAGE_COUNT));
       } else {
         setEditImages((previous) => [...previous, ...uploaded].slice(0, MAX_IMAGE_COUNT));
+      }
+
+      if (failedMessages.length > 0) {
+        const successMessage = uploaded.length > 0 ? `\u5df2\u6210\u529f\u4e0a\u4f20 ${uploaded.length} \u5f20\u3002` : '';
+        alert(`${successMessage}\n\u4e0b\u5217\u56fe\u7247\u4e0a\u4f20\u5931\u8d25\uff1a\n${failedMessages.slice(0, 3).join('\n')}`);
       }
     } catch (error) {
       console.error(error);
