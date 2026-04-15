@@ -15,8 +15,26 @@ export interface CoupleSpace {
   id: number;
   invite_code: string;
   name: string | null;
+  partner_a_name: string | null;
+  partner_a_avatar_url: string | null;
+  partner_a_avatar_pathname: string | null;
+  partner_b_name: string | null;
+  partner_b_avatar_url: string | null;
+  partner_b_avatar_pathname: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type CoupleProfileSlot = 'partnerA' | 'partnerB';
+
+export interface CoupleSpaceProfile {
+  name: string | null;
+  avatarUrl: string | null;
+}
+
+export interface CoupleSpaceProfiles {
+  partnerA: CoupleSpaceProfile;
+  partnerB: CoupleSpaceProfile;
 }
 
 // 用户
@@ -116,6 +134,20 @@ const MEMORY_RECORD_COLUMN_MAP: Record<MemoryRecordSelectField, string> = {
   updated_at: 'updated_at',
 };
 
+const COUPLE_SPACE_SELECT_CLAUSE = `
+  id,
+  invite_code,
+  name,
+  partner_a_name,
+  partner_a_avatar_url,
+  partner_a_avatar_pathname,
+  partner_b_name,
+  partner_b_avatar_url,
+  partner_b_avatar_pathname,
+  created_at,
+  updated_at
+`;
+
 function parseJsonArrayField(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === 'string');
@@ -149,6 +181,10 @@ function normalizeMemoryRecordRow(row: Record<string, unknown>): MemoryRecord {
   }
 
   return normalized as unknown as MemoryRecord;
+}
+
+function normalizeCoupleSpaceRow(row: Record<string, unknown>): CoupleSpace {
+  return row as unknown as CoupleSpace;
 }
 
 function sanitizeSelectedFields(fields?: MemoryRecordSelectField[]): MemoryRecordSelectField[] {
@@ -364,6 +400,30 @@ export async function initializeDatabase() {
   // Add couple_space_id to records
   try {
     await sql`ALTER TABLE records ADD COLUMN couple_space_id INTEGER REFERENCES couple_spaces(id)`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE couple_spaces ADD COLUMN partner_a_name VARCHAR(100)`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE couple_spaces ADD COLUMN partner_a_avatar_url TEXT`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE couple_spaces ADD COLUMN partner_a_avatar_pathname TEXT`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE couple_spaces ADD COLUMN partner_b_name VARCHAR(100)`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE couple_spaces ADD COLUMN partner_b_avatar_url TEXT`;
+  } catch (e) { /* column may exist */ }
+
+  try {
+    await sql`ALTER TABLE couple_spaces ADD COLUMN partner_b_avatar_pathname TEXT`;
   } catch (e) { /* column may exist */ }
 
   // Create indexes for new tables
@@ -705,6 +765,35 @@ function generateInviteCode(): string {
   return code;
 }
 
+function getCoupleSpaceProfileColumns(slot: CoupleProfileSlot) {
+  if (slot === 'partnerA') {
+    return {
+      name: 'partner_a_name',
+      avatarUrl: 'partner_a_avatar_url',
+      avatarPathname: 'partner_a_avatar_pathname',
+    } as const;
+  }
+
+  return {
+    name: 'partner_b_name',
+    avatarUrl: 'partner_b_avatar_url',
+    avatarPathname: 'partner_b_avatar_pathname',
+  } as const;
+}
+
+export function getCoupleSpaceProfiles(coupleSpace: CoupleSpace): CoupleSpaceProfiles {
+  return {
+    partnerA: {
+      name: coupleSpace.partner_a_name || null,
+      avatarUrl: coupleSpace.partner_a_avatar_url || null,
+    },
+    partnerB: {
+      name: coupleSpace.partner_b_name || null,
+      avatarUrl: coupleSpace.partner_b_avatar_url || null,
+    },
+  };
+}
+
 async function getRecordScope(deviceId: string): Promise<{ clause: string; values: Array<string | number> }> {
   const coupleSpaceId = await resolveDeviceIdToCoupleSpaceId(deviceId);
 
@@ -778,17 +867,20 @@ export async function createCoupleSpace(deviceId: string, name?: string): Promis
     throw new Error('Failed to generate unique invite code after 10 attempts');
   }
 
-  const coupleSpaceResult = await sql`
-    SELECT id, invite_code, name, created_at, updated_at
-    FROM couple_spaces
-    WHERE invite_code = ${inviteCode}
-  `;
+  const coupleSpaceResult = await sql.query(
+    `
+      SELECT ${COUPLE_SPACE_SELECT_CLAUSE}
+      FROM couple_spaces
+      WHERE invite_code = $1
+    `,
+    [inviteCode]
+  );
 
   if (!coupleSpaceResult.rows[0]) {
     throw new Error('Failed to create couple space');
   }
 
-  const coupleSpace = coupleSpaceResult.rows[0] as unknown as CoupleSpace;
+  const coupleSpace = normalizeCoupleSpaceRow(coupleSpaceResult.rows[0] as Record<string, unknown>);
 
   const userResult = await sql`
     INSERT INTO users (couple_space_id, device_id)
@@ -807,12 +899,15 @@ export async function createCoupleSpace(deviceId: string, name?: string): Promis
 }
 
 export async function getCoupleSpaceByInviteCode(inviteCode: string): Promise<CoupleSpace | null> {
-  const result = await sql`
-    SELECT id, invite_code, name, created_at, updated_at
-    FROM couple_spaces
-    WHERE invite_code = ${inviteCode.toUpperCase()}
-  `;
-  return result.rows[0] as unknown as CoupleSpace || null;
+  const result = await sql.query(
+    `
+      SELECT ${COUPLE_SPACE_SELECT_CLAUSE}
+      FROM couple_spaces
+      WHERE invite_code = $1
+    `,
+    [inviteCode.toUpperCase()]
+  );
+  return result.rows[0] ? normalizeCoupleSpaceRow(result.rows[0] as Record<string, unknown>) : null;
 }
 
 export async function joinCoupleSpace(deviceId: string, inviteCode: string): Promise<{ coupleSpace: CoupleSpace; user: User } | null> {
@@ -875,12 +970,68 @@ export async function getUserByDeviceId(deviceId: string): Promise<User | null> 
 }
 
 export async function getCoupleSpaceById(id: number): Promise<CoupleSpace | null> {
-  const result = await sql`
-    SELECT id, invite_code, name, created_at, updated_at
-    FROM couple_spaces
-    WHERE id = ${id}
-  `;
-  return result.rows[0] as unknown as CoupleSpace || null;
+  const result = await sql.query(
+    `
+      SELECT ${COUPLE_SPACE_SELECT_CLAUSE}
+      FROM couple_spaces
+      WHERE id = $1
+    `,
+    [id]
+  );
+  return result.rows[0] ? normalizeCoupleSpaceRow(result.rows[0] as Record<string, unknown>) : null;
+}
+
+export async function updateCoupleSpaceProfile(
+  coupleSpaceId: number,
+  slot: CoupleProfileSlot,
+  updates: {
+    name?: string | null;
+    avatarUrl?: string | null;
+    avatarPathname?: string | null;
+    clearAvatar?: boolean;
+  }
+): Promise<CoupleSpace | null> {
+  const columns = getCoupleSpaceProfileColumns(slot);
+  const setParts: string[] = [];
+  const values: Array<string | number | null> = [];
+  let paramIndex = 1;
+
+  if (updates.name !== undefined) {
+    setParts.push(`${columns.name} = $${paramIndex++}`);
+    values.push(updates.name);
+  }
+
+  if (updates.clearAvatar) {
+    setParts.push(`${columns.avatarUrl} = NULL`);
+    setParts.push(`${columns.avatarPathname} = NULL`);
+  } else {
+    if (updates.avatarUrl !== undefined) {
+      setParts.push(`${columns.avatarUrl} = $${paramIndex++}`);
+      values.push(updates.avatarUrl);
+    }
+
+    if (updates.avatarPathname !== undefined) {
+      setParts.push(`${columns.avatarPathname} = $${paramIndex++}`);
+      values.push(updates.avatarPathname);
+    }
+  }
+
+  if (setParts.length === 0) {
+    return getCoupleSpaceById(coupleSpaceId);
+  }
+
+  setParts.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(coupleSpaceId);
+
+  const result = await sql.query(
+    `UPDATE couple_spaces
+     SET ${setParts.join(', ')}
+     WHERE id = $${paramIndex}
+     RETURNING ${COUPLE_SPACE_SELECT_CLAUSE}`,
+    values
+  );
+
+  return result.rows[0] ? normalizeCoupleSpaceRow(result.rows[0] as Record<string, unknown>) : null;
 }
 
 export async function getOrCreateCoupleSpace(deviceId: string): Promise<{ coupleSpace: CoupleSpace; user: User }> {

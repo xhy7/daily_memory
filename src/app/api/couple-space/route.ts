@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrCreateCoupleSpace, getCoupleSpaceByInviteCode, joinCoupleSpace, getUserByDeviceId, initializeDatabase } from '@/lib/db';
+import {
+  getCoupleSpaceById,
+  getCoupleSpaceByInviteCode,
+  getCoupleSpaceProfiles,
+  getOrCreateCoupleSpace,
+  getUserByDeviceId,
+  initializeDatabase,
+  joinCoupleSpace,
+  updateCoupleSpaceProfile,
+  type CoupleSpace,
+  type CoupleProfileSlot,
+} from '@/lib/db';
+import { deleteImage } from '@/lib/storage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +28,14 @@ async function ensureDatabase() {
       dbInitialized = true;
     }
   }
+}
+
+function buildCoupleSpaceResponse(coupleSpace: CoupleSpace) {
+  return {
+    inviteCode: coupleSpace.invite_code,
+    coupleSpace,
+    profiles: getCoupleSpaceProfiles(coupleSpace),
+  };
 }
 
 // POST /api/couple-space - Get or create couple space for device
@@ -50,8 +70,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 });
       }
       return NextResponse.json({
-        inviteCode: result.coupleSpace.invite_code,
-        coupleSpace: result.coupleSpace,
+        ...buildCoupleSpaceResponse(result.coupleSpace),
         user: result.user,
         action: 'joined',
       });
@@ -60,8 +79,7 @@ export async function POST(request: NextRequest) {
     // Otherwise, get or create couple space
     const result = await getOrCreateCoupleSpace(deviceId);
     return NextResponse.json({
-      inviteCode: result.coupleSpace.invite_code,
-      coupleSpace: result.coupleSpace,
+      ...buildCoupleSpaceResponse(result.coupleSpace),
       user: result.user,
       action: result.user.created_at === result.coupleSpace.created_at ? 'created' : 'existing',
     });
@@ -96,8 +114,7 @@ export async function GET(request: NextRequest) {
       }
 
       return NextResponse.json({
-        inviteCode: coupleSpace.invite_code,
-        coupleSpace,
+        ...buildCoupleSpaceResponse(coupleSpace),
       });
     }
 
@@ -105,8 +122,7 @@ export async function GET(request: NextRequest) {
     if (deviceId) {
       const result = await getOrCreateCoupleSpace(deviceId);
       return NextResponse.json({
-        inviteCode: result.coupleSpace.invite_code,
-        coupleSpace: result.coupleSpace,
+        ...buildCoupleSpaceResponse(result.coupleSpace),
         user: result.user,
         action: result.user.created_at === result.coupleSpace.created_at ? 'created' : 'existing',
       });
@@ -116,5 +132,87 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Failed to get couple space:', error);
     return NextResponse.json({ error: 'Failed to get couple space', details: String(error) }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    await ensureDatabase();
+
+    const body = await request.json();
+    const { deviceId, slot, name, avatarUrl, avatarPathname, clearAvatar } = body as {
+      deviceId?: string;
+      slot?: CoupleProfileSlot;
+      name?: string;
+      avatarUrl?: string | null;
+      avatarPathname?: string | null;
+      clearAvatar?: boolean;
+    };
+
+    if (!deviceId) {
+      return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
+    }
+
+    if (slot !== 'partnerA' && slot !== 'partnerB') {
+      return NextResponse.json({ error: 'slot must be partnerA or partnerB' }, { status: 400 });
+    }
+
+    if (name === undefined && avatarUrl === undefined && avatarPathname === undefined && !clearAvatar) {
+      return NextResponse.json({ error: 'At least one field must be provided' }, { status: 400 });
+    }
+
+    const user = await getUserByDeviceId(deviceId);
+    if (!user?.couple_space_id) {
+      return NextResponse.json({ error: 'Device is not in a couple space' }, { status: 404 });
+    }
+
+    const currentCoupleSpace = await getCoupleSpaceById(user.couple_space_id);
+    if (!currentCoupleSpace) {
+      return NextResponse.json({ error: 'Couple space not found' }, { status: 404 });
+    }
+
+    const currentAvatarPathname = slot === 'partnerA'
+      ? currentCoupleSpace.partner_a_avatar_pathname
+      : currentCoupleSpace.partner_b_avatar_pathname;
+
+    const normalizedName = name !== undefined
+      ? (typeof name === 'string' && name.trim() ? name.trim() : null)
+      : undefined;
+    const normalizedAvatarUrl = avatarUrl !== undefined
+      ? (typeof avatarUrl === 'string' && avatarUrl.trim() ? avatarUrl.trim() : null)
+      : undefined;
+    const normalizedAvatarPathname = avatarPathname !== undefined
+      ? (typeof avatarPathname === 'string' && avatarPathname.trim() ? avatarPathname.trim() : null)
+      : undefined;
+
+    const updatedCoupleSpace = await updateCoupleSpaceProfile(user.couple_space_id, slot, {
+      name: normalizedName,
+      avatarUrl: normalizedAvatarUrl,
+      avatarPathname: normalizedAvatarPathname,
+      clearAvatar: clearAvatar === true,
+    });
+
+    if (!updatedCoupleSpace) {
+      return NextResponse.json({ error: 'Couple space not found' }, { status: 404 });
+    }
+
+    const nextAvatarPathname = slot === 'partnerA'
+      ? updatedCoupleSpace.partner_a_avatar_pathname
+      : updatedCoupleSpace.partner_b_avatar_pathname;
+
+    if (currentAvatarPathname && currentAvatarPathname !== nextAvatarPathname) {
+      void deleteImage(currentAvatarPathname);
+    }
+
+    return NextResponse.json({
+      ...buildCoupleSpaceResponse(updatedCoupleSpace),
+      action: 'updated',
+    });
+  } catch (error) {
+    console.error('Failed to update couple space profile:', error);
+    return NextResponse.json(
+      { error: 'Failed to update couple space profile', details: String(error) },
+      { status: 500 }
+    );
   }
 }
