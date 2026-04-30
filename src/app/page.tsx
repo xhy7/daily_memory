@@ -10,6 +10,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
 } from 'react';
+import { uploadImageFile } from '@/lib/client-image-upload';
 
 type MemoryType = 'sweet_interaction' | 'todo' | 'feeling' | 'reflection';
 type ProfileSlot = 'partnerA' | 'partnerB';
@@ -523,22 +524,7 @@ export default function Home() {
       setProfileMessage(null);
 
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        const uploadData = (await uploadResponse.json()) as {
-          error?: string;
-          url?: string | null;
-          pathname?: string | null;
-        };
-
-        if (!uploadResponse.ok || !uploadData.url) {
-          throw new Error(uploadData.error || '头像上传失败');
-        }
+        const uploadData = await uploadImageFile(file);
 
         const profileData = await requestJson<CoupleSpaceResponse>('/api/couple-space', {
           method: 'PATCH',

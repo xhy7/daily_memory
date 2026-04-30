@@ -1,0 +1,5 @@
+export const VERCEL_FUNCTION_PAYLOAD_LIMIT_BYTES = Math.floor(4.5 * 1024 * 1024);
+export const IMAGE_UPLOAD_TARGET_BYTES = Math.floor(4.2 * 1024 * 1024);
+
+export const VERCEL_FUNCTION_PAYLOAD_LIMIT_MB = 4.5;
+export const IMAGE_UPLOAD_TARGET_MB = 4.2;

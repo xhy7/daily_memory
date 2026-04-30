@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MemoryImage from '@/components/MemoryImage';
+import { uploadImageFile } from '@/lib/client-image-upload';
 
 type MemoryType = 'sweet_interaction' | 'todo' | 'feeling' | 'reflection';
 
@@ -20,7 +21,6 @@ interface MemoryItem {
 }
 
 const MAX_IMAGE_COUNT = 9;
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const PAGE_SIZE = 20;
 
 const AUTHOR_LABELS: Record<string, string> = {
@@ -193,25 +193,8 @@ export default function RecordPage() {
   }, [deviceId, fetchTodayRecords]);
 
   async function uploadSingleFile(file: File) {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch('/api/upload', { method: 'POST', body: formData });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'upload failed');
-    }
-
-    const uploadedUrl =
-      (Array.isArray(data.uploads) ? data.uploads : [])
-        .map((item: { url?: string }) => item.url)
-        .find((url: string | undefined): url is string => Boolean(url)) || data.url;
-
-    if (!uploadedUrl || typeof uploadedUrl !== 'string') {
-      throw new Error('upload failed');
-    }
-
-    return uploadedUrl;
+    const result = await uploadImageFile(file);
+    return result.url;
   }
 
   async function handleUpload(files: File[], mode: 'create' | 'edit') {
@@ -223,12 +206,6 @@ export default function RecordPage() {
     const limited = files.slice(0, Math.max(0, MAX_IMAGE_COUNT - currentCount));
     if (limited.length === 0) {
       alert(`\u6700\u591a\u53ea\u80fd\u4e0a\u4f20 ${MAX_IMAGE_COUNT} \u5f20\u56fe\u7247\u3002`);
-      return;
-    }
-
-    const oversized = limited.filter((file) => file.size > MAX_FILE_SIZE);
-    if (oversized.length > 0) {
-      alert(`\u6709 ${oversized.length} \u5f20\u56fe\u7247\u8d85\u8fc7 10MB\uff0c\u8bf7\u91cd\u65b0\u9009\u62e9\u3002`);
       return;
     }
 
@@ -602,7 +579,7 @@ export default function RecordPage() {
           >
             {uploading ? '\u4e0a\u4f20\u4e2d...' : '\u6dfb\u52a0\u56fe\u7247'}
           </button>
-          <span className="text-xs text-gray-400">{`\u6700\u591a ${MAX_IMAGE_COUNT} \u5f20\uff0c\u5355\u5f20\u4e0d\u8d85\u8fc7 10MB`}</span>
+          <span className="text-xs text-gray-400">{`\u6700\u591a ${MAX_IMAGE_COUNT} \u5f20\uff0c\u8d85\u8fc7 4.5MB \u4f1a\u81ea\u52a8\u538b\u7f29`}</span>
         </div>
 
         {imageUrls.length > 0 && (

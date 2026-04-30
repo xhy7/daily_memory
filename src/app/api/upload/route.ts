@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveImageUploadType, uploadImage } from '@/lib/storage';
+import {
+  VERCEL_FUNCTION_PAYLOAD_LIMIT_BYTES,
+  VERCEL_FUNCTION_PAYLOAD_LIMIT_MB,
+} from '@/lib/upload-limits';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -18,9 +21,11 @@ export async function POST(request: NextRequest) {
     }
 
     for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
+      if (file.size > VERCEL_FUNCTION_PAYLOAD_LIMIT_BYTES) {
         return NextResponse.json(
-          { error: `${file.name || '图片'} 过大，单张不能超过 ${MAX_FILE_SIZE / 1024 / 1024}MB` },
+          {
+            error: `${file.name || '\u56fe\u7247'} \u8fc7\u5927\uff0c\u5355\u5f20\u4e0d\u80fd\u8d85\u8fc7 ${VERCEL_FUNCTION_PAYLOAD_LIMIT_MB}MB\uff0c\u8bf7\u5148\u538b\u7f29\u540e\u518d\u4e0a\u4f20\u3002`,
+          },
           { status: 400 }
         );
       }
@@ -44,7 +49,7 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.error('Upload failed for file:', file.name, error);
         errors.push({
-          fileName: file.name || '未命名图片',
+          fileName: file.name || '\u672a\u547d\u540d\u56fe\u7247',
           message: error instanceof Error ? error.message : 'Upload failed',
         });
       }

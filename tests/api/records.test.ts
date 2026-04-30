@@ -31,12 +31,10 @@ describe('Records API', () => {
   it('should convert local date to UTC range', () => {
     const dateStr = '2024-04-11';
     const [year, month, day] = dateStr.split('-').map(Number);
-    const localStart = new Date(year, month - 1, day, 0, 0, 0);
-    const localEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-    // Convert to UTC (subtract 8 hours for Asia/Shanghai)
-    const utcStart = new Date(localStart.getTime() - 8 * 60 * 60 * 1000);
-    const utcEnd = new Date(localEnd.getTime() - 8 * 60 * 60 * 1000 + 1000);
+    const shanghaiOffsetMs = 8 * 60 * 60 * 1000;
+    const utcStart = new Date(Date.UTC(year, month - 1, day) - shanghaiOffsetMs);
+    const utcEnd = new Date(Date.UTC(year, month - 1, day + 1) - shanghaiOffsetMs - 1);
 
     expect(utcStart.toISOString()).toBe('2024-04-10T16:00:00.000Z');
     expect(utcEnd.toISOString()).toBe('2024-04-11T15:59:59.999Z');
