@@ -145,4 +145,33 @@ describe('prepareImageForUpload', () => {
       global.fetch = originalFetch;
     }
   });
+
+  it('reports upload phase for small files', async () => {
+    const originalFetch = global.fetch;
+    const phases: string[] = [];
+    global.fetch = (async () =>
+      Response.json({ url: 'https://example.com/image.jpg', pathname: 'images/image.jpg' })) as typeof fetch;
+
+    try {
+      await uploadImageFile(makeFile(1024, 'small.jpg', 'image/jpeg'), {
+        onPhaseChange: (phase) => phases.push(phase),
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    expect(phases).toEqual(['uploading']);
+  });
+
+  it('reports compression phase before decoding oversized files', async () => {
+    const phases: string[] = [];
+
+    await expect(
+      uploadImageFile(makeFile(IMAGE_UPLOAD_TARGET_BYTES + 1024, 'large.jpg', 'image/jpeg'), {
+        onPhaseChange: (phase) => phases.push(phase),
+      })
+    ).rejects.toThrow('JPG');
+
+    expect(phases).toEqual(['compressing']);
+  });
 });

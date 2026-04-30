@@ -10,7 +10,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
 } from 'react';
-import { uploadImageFile } from '@/lib/client-image-upload';
+import { uploadImageFile, type ImageUploadPhase } from '@/lib/client-image-upload';
 
 type MemoryType = 'sweet_interaction' | 'todo' | 'feeling' | 'reflection';
 type ProfileSlot = 'partnerA' | 'partnerB';
@@ -62,6 +62,7 @@ type AvatarCardProps = {
   isEditing: boolean;
   isSavingName: boolean;
   isUploading: boolean;
+  uploadPhase: ImageUploadPhase | null;
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onSaveName: (name: string) => void;
@@ -287,6 +288,7 @@ function AvatarCard({
   isEditing,
   isSavingName,
   isUploading,
+  uploadPhase,
   onStartEdit,
   onCancelEdit,
   onSaveName,
@@ -294,6 +296,7 @@ function AvatarCard({
   onClearAvatar,
 }: AvatarCardProps) {
   const displayName = getDisplayName(profile.name, fallbackName);
+  const uploadLabel = uploadPhase === 'compressing' ? '\u538b\u7f29\u4e2d...' : '\u4e0a\u4f20\u4e2d...';
   const [draftName, setDraftName] = useState(displayName);
 
   useEffect(() => {
@@ -337,7 +340,7 @@ function AvatarCard({
         )}
 
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/68 via-slate-900/20 to-transparent px-3 pb-3 pt-8 text-center text-xs font-semibold text-white opacity-90 transition sm:opacity-0 sm:group-hover:opacity-100">
-          {isUploading ? '上传中...' : '更换头像'}
+          {isUploading ? uploadLabel : '\u66f4\u6362\u5934\u50cf'}
         </div>
 
         {isUploading && (
@@ -398,6 +401,10 @@ export default function Home() {
   const [editingName, setEditingName] = useState<ProfileSlot | null>(null);
   const [savingNameSlot, setSavingNameSlot] = useState<ProfileSlot | null>(null);
   const [uploadingSlot, setUploadingSlot] = useState<ProfileSlot | null>(null);
+  const [avatarUploadPhase, setAvatarUploadPhase] = useState<Record<ProfileSlot, ImageUploadPhase | null>>({
+    partnerA: null,
+    partnerB: null,
+  });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -521,10 +528,15 @@ export default function Home() {
       }
 
       setUploadingSlot(slot);
+      setAvatarUploadPhase((previous) => ({ ...previous, [slot]: null }));
       setProfileMessage(null);
 
       try {
-        const uploadData = await uploadImageFile(file);
+        const uploadData = await uploadImageFile(file, {
+          onPhaseChange: (phase) => {
+            setAvatarUploadPhase((previous) => ({ ...previous, [slot]: phase }));
+          },
+        });
 
         const profileData = await requestJson<CoupleSpaceResponse>('/api/couple-space', {
           method: 'PATCH',
@@ -544,6 +556,7 @@ export default function Home() {
         setProfileMessage(error instanceof Error ? error.message : '头像保存失败');
       } finally {
         setUploadingSlot(null);
+        setAvatarUploadPhase((previous) => ({ ...previous, [slot]: null }));
       }
     },
     [deviceId]
@@ -669,6 +682,7 @@ export default function Home() {
                     isEditing={editingName === 'partnerA'}
                     isSavingName={savingNameSlot === 'partnerA'}
                     isUploading={uploadingSlot === 'partnerA'}
+                    uploadPhase={avatarUploadPhase.partnerA}
                     onStartEdit={() => {
                       setProfileMessage(null);
                       setEditingName('partnerA');
@@ -701,6 +715,7 @@ export default function Home() {
                     isEditing={editingName === 'partnerB'}
                     isSavingName={savingNameSlot === 'partnerB'}
                     isUploading={uploadingSlot === 'partnerB'}
+                    uploadPhase={avatarUploadPhase.partnerB}
                     onStartEdit={() => {
                       setProfileMessage(null);
                       setEditingName('partnerB');

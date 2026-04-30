@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MemoryImage from '@/components/MemoryImage';
-import { uploadImageFile } from '@/lib/client-image-upload';
+import { uploadImageFile, type ImageUploadPhase } from '@/lib/client-image-upload';
 
 type MemoryType = 'sweet_interaction' | 'todo' | 'feeling' | 'reflection';
 
@@ -41,6 +41,14 @@ const TYPE_COLORS: Record<string, string> = {
   feeling: 'from-pink-50 to-pink-100 border-pink-400',
   reflection: 'from-yellow-50 to-yellow-100 border-yellow-400',
 };
+
+function getUploadLabel(isUploading: boolean, phase: ImageUploadPhase | null) {
+  if (!isUploading) {
+    return '\u6dfb\u52a0\u56fe\u7247';
+  }
+
+  return phase === 'compressing' ? '\u538b\u7f29\u4e2d...' : '\u4e0a\u4f20\u4e2d...';
+}
 
 function formatDay(date: Date) {
   const year = date.getFullYear();
@@ -124,12 +132,14 @@ export default function RecordPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<ImageUploadPhase | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editImages, setEditImages] = useState<string[]>([]);
   const [editUploading, setEditUploading] = useState(false);
+  const [editUploadPhase, setEditUploadPhase] = useState<ImageUploadPhase | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingRecordIds, setDeletingRecordIds] = useState<number[]>([]);
   const [togglingRecordIds, setTogglingRecordIds] = useState<number[]>([]);
@@ -192,8 +202,8 @@ export default function RecordPage() {
     void fetchTodayRecords(false);
   }, [deviceId, fetchTodayRecords]);
 
-  async function uploadSingleFile(file: File) {
-    const result = await uploadImageFile(file);
+  async function uploadSingleFile(file: File, onPhaseChange: (phase: ImageUploadPhase) => void) {
+    const result = await uploadImageFile(file, { onPhaseChange });
     return result.url;
   }
 
@@ -212,8 +222,10 @@ export default function RecordPage() {
     try {
       if (mode === 'create') {
         setUploading(true);
+        setUploadPhase(null);
       } else {
         setEditUploading(true);
+        setEditUploadPhase(null);
       }
 
       const uploaded: string[] = [];
@@ -221,7 +233,13 @@ export default function RecordPage() {
 
       for (const file of limited) {
         try {
-          const uploadedUrl = await uploadSingleFile(file);
+          const uploadedUrl = await uploadSingleFile(file, (phase) => {
+            if (mode === 'create') {
+              setUploadPhase(phase);
+            } else {
+              setEditUploadPhase(phase);
+            }
+          });
           uploaded.push(uploadedUrl);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'upload failed';
@@ -245,8 +263,10 @@ export default function RecordPage() {
     } finally {
       if (mode === 'create') {
         setUploading(false);
+        setUploadPhase(null);
       } else {
         setEditUploading(false);
+        setEditUploadPhase(null);
       }
     }
   }
@@ -577,7 +597,7 @@ export default function RecordPage() {
             disabled={uploading}
             className="py-2 px-4 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition disabled:opacity-60"
           >
-            {uploading ? '\u4e0a\u4f20\u4e2d...' : '\u6dfb\u52a0\u56fe\u7247'}
+            {getUploadLabel(uploading, uploadPhase)}
           </button>
           <span className="text-xs text-gray-400">{`\u6700\u591a ${MAX_IMAGE_COUNT} \u5f20\uff0c\u8d85\u8fc7 4.5MB \u4f1a\u81ea\u52a8\u538b\u7f29`}</span>
         </div>
@@ -669,7 +689,7 @@ export default function RecordPage() {
                         }}
                       />
                       <button type="button" onClick={() => editFileInputRef.current?.click()} disabled={editUploading} className="py-1 px-3 bg-pink-100 text-pink-500 rounded-lg hover:bg-pink-200 transition text-sm disabled:opacity-60">
-                        {editUploading ? '\u4e0a\u4f20\u4e2d...' : '\u6dfb\u52a0\u56fe\u7247'}
+                        {getUploadLabel(editUploading, editUploadPhase)}
                       </button>
                       {editImages.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2">

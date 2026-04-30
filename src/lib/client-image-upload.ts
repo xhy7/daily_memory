@@ -35,6 +35,12 @@ export interface ImageUploadResult {
   prepared: PreparedImageUpload;
 }
 
+export type ImageUploadPhase = 'compressing' | 'uploading';
+
+export interface UploadImageFileOptions {
+  onPhaseChange?: (phase: ImageUploadPhase) => void;
+}
+
 export interface DecodedImage {
   source: CanvasImageSource;
   width: number;
@@ -308,8 +314,17 @@ export async function prepareImageForUpload(
   throw getStillTooLargeError(options.targetBytes ? targetBytes / 1024 / 1024 : IMAGE_UPLOAD_TARGET_MB);
 }
 
-export async function uploadImageFile(file: File): Promise<ImageUploadResult> {
+export async function uploadImageFile(
+  file: File,
+  options: UploadImageFileOptions = {}
+): Promise<ImageUploadResult> {
+  if (file.size > IMAGE_UPLOAD_TARGET_BYTES) {
+    options.onPhaseChange?.('compressing');
+  }
+
   const prepared = await prepareImageForUpload(file);
+  options.onPhaseChange?.('uploading');
+
   const formData = new FormData();
   formData.append('file', prepared.file);
 
